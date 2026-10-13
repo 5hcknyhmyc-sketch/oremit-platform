@@ -1,0 +1,88 @@
+import { createContext, useContext } from 'react'
+import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, ArrowLeftRight, Landmark, Users, ShieldCheck, Wallet, BarChart3, Settings as Cog } from 'lucide-react'
+import { useStore } from '../../store'
+import { Logo, brandVars } from '../../components/ui'
+import TopBar from '../../components/TopBar'
+import AiPanel from '../../components/AiPanel'
+import { MODULES, DECISION_ROLES, SAR_ROLES } from '../../lib/reference'
+import Dashboard from './Dashboard'
+import Transactions from './Transactions'
+import Payments from './Payments'
+import Customers, { CustomerDetail } from './Customers'
+import Compliance from './Compliance'
+import Treasury from './Treasury'
+import Reports from './Reports'
+import Settings from './Settings'
+
+const ICONS = { dashboard: LayoutDashboard, transactions: ArrowLeftRight, payments: Landmark, customers: Users, compliance: ShieldCheck, treasury: Wallet, reports: BarChart3, settings: Cog }
+const PATHS = { dashboard: '/portal', transactions: '/portal/transactions', payments: '/portal/payments', customers: '/portal/customers', compliance: '/portal/compliance', treasury: '/portal/treasury', reports: '/portal/reports', settings: '/portal/settings' }
+
+const Ctx = createContext(null)
+export const usePortal = () => useContext(Ctx)
+
+export default function PortalApp() {
+  const session = useStore((s) => s.session)
+  const db = useStore((s) => s.db)
+  const login = useStore((s) => s.login)
+  const nav = useNavigate()
+  if (!session || session.kind !== 'msb') return <Navigate to="/" replace />
+  const t = db.tenants.find((x) => x.id === session.tenantId)
+  if (!t) return <Navigate to="/" replace />
+  const allowed = t.roles[session.role] || []
+  const ctx = {
+    db, t, session, role: session.role, actor: session.name,
+    can: (m) => allowed.includes(m),
+    canDecide: DECISION_ROLES.includes(session.role),
+    canSar: SAR_ROLES.includes(session.role),
+  }
+  const openCases = db.cases.filter((k) => k.tenantId === t.id && k.status !== 'closed').length
+  const unmatched = db.payIns.filter((p) => p.tenantId === t.id && p.status === 'unmatched').length
+  const counts = { compliance: openCases, payments: unmatched }
+  const first = MODULES.find((m) => allowed.includes(m.id))
+  const guard = (m, el) => (allowed.includes(m) ? el : <NoAccess />)
+
+  return (
+    <Ctx.Provider value={ctx}>
+      <div style={brandVars(t)}>
+        <TopBar label={session.impersonating ? 'Super Admin view' : `${t.name} · ${session.role}`} />
+        {session.impersonating && (
+          <div className="imp-banner">You're viewing {t.name}'s portal as the platform owner. Actions are recorded under your name.
+            <button className="btn sm" onClick={() => { login({ kind: 'super' }); nav('/admin/msbs') }}>Back to Super Admin</button>
+          </div>
+        )}
+        {t.status === 'review' && <div className="imp-banner">This MSB is awaiting approval by TheFXSoft. You can set everything up; real transfers start at go-live.</div>}
+        {t.status === 'suspended' && <div className="imp-banner">This MSB is suspended by the platform owner. Customers cannot send money.</div>}
+        <div className="shell">
+          <aside className="side">
+            <div className="tenant-id"><Logo t={t} /><div><b>{t.name}</b><span>{t.domain || `${t.slug}.coremit.app`}</span></div></div>
+            <nav className="nav">
+              {MODULES.filter((m) => allowed.includes(m.id)).map((m) => {
+                const I = ICONS[m.id]
+                return <NavLink key={m.id} to={PATHS[m.id]} end={m.id === 'dashboard'} className={({ isActive }) => (isActive ? 'active' : '')}><I />{m.label}{counts[m.id] ? <span className="count">{counts[m.id]}</span> : null}</NavLink>
+              })}
+            </nav>
+            <div className="side-foot"><span>Signed in as <b>{session.name}</b></span><span>{session.role}</span></div>
+          </aside>
+          <main className="main">
+            <Routes>
+              <Route index element={allowed.includes('dashboard') ? <Dashboard /> : <Navigate to={PATHS[first?.id] || '/'} replace />} />
+              <Route path="transactions/*" element={guard('transactions', <Transactions />)} />
+              <Route path="payments" element={guard('payments', <Payments />)} />
+              <Route path="customers" element={guard('customers', <Customers />)} />
+              <Route path="customers/:id" element={guard('customers', <CustomerDetail />)} />
+              <Route path="compliance/*" element={guard('compliance', <Compliance />)} />
+              <Route path="treasury" element={guard('treasury', <Treasury />)} />
+              <Route path="reports" element={guard('reports', <Reports />)} />
+              <Route path="settings/*" element={guard('settings', <Settings />)} />
+              <Route path="*" element={<Navigate to="/portal" replace />} />
+            </Routes>
+          </main>
+        </div>
+        {(allowed.includes('compliance') || session.role === 'Admin') && <AiPanel tenant={t} />}
+      </div>
+    </Ctx.Provider>
+  )
+}
+
+const NoAccess = () => <div className="panel"><div className="empty">Your role doesn't include this section. Ask your admin to change it in Settings → Staff & roles.</div></div>
