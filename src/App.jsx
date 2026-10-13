@@ -25,6 +25,7 @@ function usePartnerSimulator() {
 export default function App() {
   usePartnerSimulator()
   const db = useStore((s) => s.db)
+  useEffect(() => { if (!db.journals || !db.integrationRequests || db.tenants.some((t) => !t.integrations)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
   // In production, a request to <slug>.coremit.app or an MSB's own domain opens its customer app directly.
   const hostTenant = resolveHostTenant(db)
   return (

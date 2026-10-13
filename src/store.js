@@ -26,7 +26,10 @@ export const useStore = create(
       notify(msg, tone = 'ok') { set({ toast: { msg, tone, id: Date.now() } }) },
     }),
     {
-      name: 'coremit-demo-v1',
+      name: 'coremit-demo',
+      version: 2,
+      // Old browser data from an earlier build is replaced with a fresh seed.
+      migrate: (state, version) => (version < 2 || !state?.db?.journals ? { db: buildSeed(), session: null, customerSessions: {} } : state),
       partialize: (s) => ({ db: s.db, session: s.session, customerSessions: s.customerSessions }),
     },
   ),
