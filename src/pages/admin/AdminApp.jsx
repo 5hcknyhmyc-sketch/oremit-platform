@@ -1,27 +1,28 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink, Navigate, Link, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Building2, CheckCircle2, Globe2, Receipt, ScrollText, Plus, Copy, ExternalLink } from 'lucide-react'
+import { LayoutDashboard, Building2, CheckCircle2, Globe2, Receipt, ScrollText, Plus, Copy, ExternalLink, Plug } from 'lucide-react'
 import { useStore, act } from '../../store'
 import TopBar from '../../components/TopBar'
-import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal } from '../../components/ui'
+import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal, Field } from '../../components/ui'
 import * as E from '../../lib/engine'
-import { PARTNERS } from '../../lib/reference'
+import { PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf } from '../../lib/reference'
 import { gbp, gbp2, fmtDate, DAY, ago } from '../../lib/util'
 
-const NAV = [['/admin', 'Overview', LayoutDashboard, true], ['/admin/msbs', 'MSBs', Building2], ['/admin/approvals', 'Approvals', CheckCircle2], ['/admin/network', 'Payout network', Globe2], ['/admin/billing', 'Billing', Receipt], ['/admin/audit', 'Audit log', ScrollText]]
+const NAV = [['/admin', 'Overview', LayoutDashboard, true], ['/admin/msbs', 'MSBs', Building2], ['/admin/approvals', 'Approvals', CheckCircle2], ['/admin/integrations', 'Integration requests', Plug], ['/admin/network', 'Integrations catalogue', Globe2], ['/admin/billing', 'Billing', Receipt], ['/admin/audit', 'Audit log', ScrollText]]
 
 export default function AdminApp() {
   const session = useStore((s) => s.session)
   const db = useStore((s) => s.db)
   if (!session || session.kind !== 'super') return <Navigate to="/" replace />
   const review = db.tenants.filter((t) => t.status === 'review').length
+  const reqs = db.integrationRequests.filter((r) => ['requested', 'accepted'].includes(r.status)).length
   return (
     <>
       <TopBar label="Super Admin · TheFXSoft" />
       <div className="shell">
         <aside className="side">
           <div className="tenant-id"><div className="logo" style={{ '--brand': 'var(--chrome)', '--brand-ink': '#fff' }}>FX</div><div><b>TheFXSoft</b><span>admin.coremit.app</span></div></div>
-          <nav className="nav">{NAV.map(([to, l, I, end]) => <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : '')}><I />{l}{l === 'Approvals' && review ? <span className="count">{review}</span> : null}</NavLink>)}</nav>
+          <nav className="nav">{NAV.map(([to, l, I, end]) => <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : '')}><I />{l}{l === 'Approvals' && review ? <span className="count">{review}</span> : null}{l === 'Integration requests' && reqs ? <span className="count">{reqs}</span> : null}</NavLink>)}</nav>
           <div className="side-foot"><span>Signed in as <b>Zaland Shah</b></span><span>Owner</span></div>
         </aside>
         <main className="main">
@@ -30,6 +31,7 @@ export default function AdminApp() {
             <Route path="msbs" element={<Msbs />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="network" element={<Network />} />
+            <Route path="integrations" element={<Requests />} />
             <Route path="billing" element={<Billing />} />
             <Route path="audit" element={<Audit />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
@@ -135,14 +137,15 @@ function Approvals() {
   const toggle = (t, k, v) => act((d) => { d.tenants.find((x) => x.id === t.id).checks[k] = v })
   return (
     <>
-      <PageHead title="Approvals" sub="Automated checks run on submission. Complete the manual ones, then approve to go live." />
+      <PageHead title="Approvals" sub="Go-live checklist: agreement, integrations, prefunding and domain. Regulatory status is self-declared by the MSB and remains its responsibility." />
       {rev.length ? rev.map((t) => {
         const all = E.APPROVAL_CHECKS.every(([k]) => t.checks[k])
         return (
           <Panel key={t.id} title={<div className="cell-t"><Logo t={t} /><div><h2>{t.name}</h2><small className="muted mono">FRN {t.frn} · MLR {t.mlr} · set up in {setup(t)} · {t.email}</small></div></div>} actions={<><Link className="btn sm" to={`/app/${t.slug}`}>Preview app</Link><button className="btn pri" disabled={!all} onClick={() => act((d) => E.setTenantStatus(d, t.id, 'live', 'Zaland Shah'), `${t.name} is live`)}>Approve & go live</button></>}>
             <div className="panel-b stack">
-              <div className="checks">{E.APPROVAL_CHECKS.map(([k, l]) => <label key={k} className="check"><input type="checkbox" checked={!!t.checks[k]} onChange={(e) => toggle(t, k, e.target.checked)} /><span>{l}<small>{['ch', 'fca', 'mlr'].includes(k) ? 'Automated check' : 'Manual check'}</small></span></label>)}</div>
-              <div className="muted small">Corridors: <b>{t.corridors.map((c) => 'GBP → ' + c.cur).join(', ')}</b> · Partners: {t.partners.map((p) => PARTNERS.find((x) => x.id === p)?.name).join(', ')} · MLRO: {t.compliance.mlro || '—'} · Auto-release up to {gbp(t.compliance.autoRelease.maxAmount)}</div>
+              <div className="checks">{E.APPROVAL_CHECKS.map(([k, l]) => <label key={k} className="check"><input type="checkbox" checked={!!t.checks[k]} onChange={(e) => toggle(t, k, e.target.checked)} /><span>{l}<small>{['reg', 'kyc', 'payout', 'domain'].includes(k) ? 'Set automatically from onboarding' : 'Manual check'}</small></span></label>)}</div>
+              <div className="muted small">Corridors: <b>{t.corridors.map((c) => 'GBP → ' + c.cur).join(', ')}</b> · KYC: {t.integrations.kyc.provider === 'custom' ? `custom (${t.integrations.kyc.status})` : KYC_PROVIDERS.find((k) => k.id === t.integrations.kyc.provider)?.name} · Payout: {t.partners.map((p) => partnersOf(db).find((x) => x.id === p)?.name).join(', ') || 'none yet'} · Pay-in: {t.integrations.payin.map((b) => PAYIN_BANKS.find((x) => x.id === b)?.name).join(', ')} · MLRO: {t.compliance.mlro || '—'}</div>
+              <div className="muted small">Declaration {t.declaration?.accepted ? <Pill tone="good">accepted by {t.declaration.by}</Pill> : <Pill tone="crit">not accepted</Pill>} · FRN {t.frn || '—'} · MLR {t.mlr || '—'} (self-declared)</div>
               {!all && <p className="muted small">Tick every check to enable approval.</p>}
             </div>
           </Panel>
@@ -154,13 +157,40 @@ function Approvals() {
 
 function Network() {
   const db = useStore((s) => s.db)
+  const users = (pred) => db.tenants.filter(pred).map((t) => t.name).join(', ') || <span className="muted">No MSBs yet</span>
   return (
     <>
-      <PageHead title="Payout network" sub="Partners integrated once at platform level. Each MSB switches on the ones it has a contract for." />
-      <Panel><div className="tbl-wrap"><table><thead><tr><th>Partner</th><th>Currencies</th><th>Methods</th><th>Used by</th><th className="r">Paid out, 30d</th><th>Status</th></tr></thead>
-        <tbody>{PARTNERS.map((p) => { const users = db.tenants.filter((t) => t.partners.includes(p.id)); const v = db.transactions.filter((x) => x.partnerId === p.id && x.status === 'paid' && Date.now() - x.createdAt < 30 * DAY).reduce((a, x) => a + x.sendAmount, 0); return <tr key={p.id}><td><b>{p.name}</b></td><td className="mono">{p.cur.join(', ')}</td><td>{p.methods.join(', ')}</td><td>{users.length ? users.map((t) => t.name).join(', ') : <span className="muted">No MSBs yet</span>}</td><td className="r num">{gbp(v)}</td><td><Pill tone="good">Connected</Pill></td></tr> })}</tbody>
+      <PageHead title="Integrations catalogue" sub="What every MSB can switch on at sign-up. Included items are already built; anything else is quoted as a custom integration." />
+      <Panel title="Identity verification (KYC)"><div className="tbl-wrap"><table><thead><tr><th>Provider</th><th>What it does</th><th>Used by</th><th>Cost</th></tr></thead><tbody>{KYC_PROVIDERS.map((k) => <tr key={k.id}><td><b>{k.name}</b></td><td className="small">{k.desc}</td><td>{users((t) => t.integrations.kyc.provider === k.id)}</td><td>{k.included ? <Pill tone="good">Included</Pill> : <Pill tone="info">Quoted</Pill>}</td></tr>)}</tbody></table></div></Panel>
+      <Panel title="Payout partners"><div className="tbl-wrap"><table><thead><tr><th>Partner</th><th>Currencies</th><th>Methods</th><th>Used by</th><th className="r">Paid out, 30d</th><th>Cost</th></tr></thead>
+        <tbody>{partnersOf(db).map((p) => { const v = db.transactions.filter((x) => x.partnerId === p.id && x.status === 'paid' && Date.now() - x.createdAt < 30 * DAY).reduce((a, x) => a + x.sendAmount, 0); return <tr key={p.id}><td><b>{p.name}</b></td><td className="mono">{p.cur.join(', ')}</td><td>{p.methods.join(', ')}</td><td>{users((t) => t.partners.includes(p.id))}</td><td className="r num">{gbp(v)}</td><td>{p.included ? <Pill tone="good">Included</Pill> : <Pill tone="info">Custom</Pill>}</td></tr> })}</tbody>
       </table></div></Panel>
-      <p className="muted small">Partner names are placeholders for the demo.</p>
+      <Panel title="Pay-in banks and card acquirers"><div className="tbl-wrap"><table><thead><tr><th>Provider</th><th>Type</th><th>Used by</th><th>Cost</th></tr></thead><tbody>{PAYIN_BANKS.map((b) => <tr key={b.id}><td><b>{b.name}</b></td><td className="small">{b.kind}</td><td>{users((t) => t.integrations.payin.includes(b.id))}</td><td>{b.included ? <Pill tone="good">Included</Pill> : <Pill tone="info">Quoted</Pill>}</td></tr>)}</tbody></table></div></Panel>
+    </>
+  )
+}
+
+function Requests() {
+  const db = useStore((s) => s.db)
+  const [q, setQ] = useState(null)
+  const [f, setF] = useState({ setup: '', monthly: '', weeks: '', note: '' })
+  const rows = [...db.integrationRequests].sort((a, b) => b.createdAt - a.createdAt)
+  const pill = { requested: <Pill tone="warn">Awaiting quote</Pill>, quoted: <Pill tone="info">Quoted — waiting for MSB</Pill>, accepted: <Pill tone="info">Accepted — in build</Pill>, live: <Pill tone="good">Live</Pill>, declined: <Pill tone="mute">Declined</Pill> }
+  const send = () => act((d) => E.quoteIntegration(d, q.id, f, 'Zaland Shah'), 'Quote sent to the MSB') && setQ(null)
+  return (
+    <>
+      <PageHead title="Integration requests" sub="Custom KYC, payout and banking integrations MSBs have asked for. Quote them, then mark live when built." />
+      <Panel>{rows.length ? <div className="list">{rows.map((r) => { const t = db.tenants.find((x) => x.id === r.tenantId); return (
+        <div className="li" key={r.id}><div className="grow"><b>{t?.name} · {r.name} <span className="tag">{r.kind}</span></b><small>{r.notes} · {fmtDate(r.createdAt, false)} · by {r.by}{r.quote ? ` · £${r.quote.setup.toLocaleString('en-GB')} setup + £${r.quote.monthly}/mo, ~${r.quote.weeks} wks` : ''}</small></div>
+          <div className="row">{pill[r.status]}
+            {r.status === 'requested' && <button className="btn sm pri" onClick={() => { setQ(r); setF({ setup: '', monthly: '', weeks: '', note: '' }) }}>Send quote</button>}
+            {r.status === 'accepted' && <button className="btn sm good" onClick={() => act((d) => E.setIntegrationStatus(d, r.id, 'live', 'Zaland Shah'), `${r.name} is live for ${t?.name}`)}>Mark live</button>}
+            {['requested', 'quoted'].includes(r.status) && <button className="btn sm ghost" onClick={() => act((d) => E.setIntegrationStatus(d, r.id, 'declined', 'Zaland Shah'), 'Declined')}>Decline</button>}
+          </div></div>) })}</div> : <Empty>No requests.</Empty>}</Panel>
+      {q && <Modal title={`Quote: ${q.name} for ${db.tenants.find((x) => x.id === q.tenantId)?.name}`} onClose={() => setQ(null)} footer={<><button className="btn" onClick={() => setQ(null)}>Cancel</button><button className="btn pri" onClick={send}>Send quote</button></>}>
+        <div className="form"><Field label="Setup fee (£)" id="q-s"><input id="q-s" className="inp num" value={f.setup} onChange={(e) => setF({ ...f, setup: e.target.value })} /></Field><Field label="Monthly fee (£)" id="q-m"><input id="q-m" className="inp num" value={f.monthly} onChange={(e) => setF({ ...f, monthly: e.target.value })} /></Field><Field label="Build time (weeks)" id="q-w"><input id="q-w" className="inp num" value={f.weeks} onChange={(e) => setF({ ...f, weeks: e.target.value })} /></Field></div>
+        <Field label="Note to the MSB" id="q-n"><textarea id="q-n" className="ta" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
+      </Modal>}
     </>
   )
 }

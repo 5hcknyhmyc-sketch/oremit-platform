@@ -18,6 +18,7 @@ export const RULE_TYPES = {
   pep: { label: 'Politically exposed person', params: [], describe: () => 'Customer is a PEP' },
   sanctions: { label: 'Sanctions screening match', params: [], describe: () => 'Sender or recipient has an unresolved screening match' },
   sof_missing: { label: 'Source of funds missing above amount', params: [{ k: 'amount', label: 'Amount (£)', type: 'number' }], describe: (p) => `No source of funds given for transfer over £${p.amount}` },
+  docs_required: { label: 'Required documents for an amount band', params: [{ k: 'min', label: 'From (£)', type: 'number' }, { k: 'max', label: 'To (£)', type: 'number' }, { k: 'customer', label: 'Customer type (first-time / existing / all)', type: 'text' }, { k: 'docs', label: 'Required documents (comma separated)', type: 'list' }], describe: (p) => `£${p.min}–£${p.max}, ${p.customer || 'all'} customers: ${(p.docs || []).join(', ') || 'none'} verified` },
   young_sender: { label: 'Young sender, large amount', params: [{ k: 'age', label: 'Under age', type: 'number' }, { k: 'amount', label: 'Amount (£)', type: 'number' }], describe: (p) => `Sender under ${p.age} sending over £${p.amount}` },
 }
 
@@ -31,6 +32,9 @@ export function defaultRules(edd = 5000, sof = 2000) {
     r('first_txn_over', 'Large first transfer', 'hold', 'medium', { amount: 2000 }),
     r('sof_missing', 'Source of funds required', 'hold', 'medium', { amount: sof }),
     r('cumulative_over', '30-day total over limit', 'hold', 'medium', { amount: 15000, days: 30 }),
+    r('docs_required', 'First-time £1–4,000: photo ID', 'hold', 'medium', { min: 1, max: 4000, customer: 'first-time', docs: ['Photo ID'] }),
+    r('docs_required', 'First-time £4,001–5,000: ID + address', 'hold', 'medium', { min: 4001, max: 5000, customer: 'first-time', docs: ['Photo ID', 'Proof of address'] }),
+    r('docs_required', '£5,000+: ID, address, source of funds', 'hold', 'high', { min: 5000, max: 99999999, customer: 'all', docs: ['Photo ID', 'Proof of address', 'Source of funds evidence'] }),
     r('velocity_count', 'High frequency', 'flag', 'low', { count: 5, days: 7 }),
     r('structuring', 'Possible structuring', 'hold', 'high', { threshold: 1000, count: 3, days: 3 }),
     r('many_senders', 'Recipient used by many senders', 'flag', 'medium', { count: 3, days: 30 }),
@@ -42,6 +46,7 @@ export function defaultRules(edd = 5000, sof = 2000) {
 export function evaluate(db, tx) {
   const tenant = db.tenants.find((t) => t.id === tx.tenantId)
   const cust = db.customers.find((c) => c.id === tx.customerId)
+  const c = cust
   const rec = db.recipients.find((x) => x.id === tx.recipientId)
   const live = (t) => !['cancelled', 'rejected', 'refunded'].includes(t.status) && t.id !== tx.id && t.createdAt <= tx.createdAt
   const history = db.transactions.filter((t) => t.customerId === tx.customerId && live(t))
@@ -83,6 +88,18 @@ export function evaluate(db, tx) {
         break
       }
       case 'sof_missing': if (amt > p.amount && !tx.sof) detail = `No source of funds for £${amt}`; break
+      case 'docs_required': {
+        const first = !history.length
+        const want = (p.customer || 'all').toLowerCase()
+        if (!(amt >= p.min && amt <= p.max)) break
+        if (want === 'first-time' && !first) break
+        if (want === 'existing' && first) break
+        const ok = (d) => d.status === 'verified'
+        const have = (name) => name === 'Photo ID' ? c.kyc.docs.some((d) => ok(d) && ['Passport', 'UK driving licence', 'National ID card'].includes(d.type)) : c.kyc.docs.some((d) => ok(d) && d.type === name)
+        const missing = (p.docs || []).filter((d) => !have(d))
+        if (missing.length) detail = `Missing: ${missing.join(', ')}`
+        break
+      }
       case 'young_sender': { const a = ageFrom(cust.dob); if (a !== null && a < p.age && amt > p.amount) detail = `Sender aged ${a}, £${amt}`; break }
     }
     if (detail) hits.push({ ruleId: rule.id, name: rule.name, action: rule.action, severity: rule.severity, detail })

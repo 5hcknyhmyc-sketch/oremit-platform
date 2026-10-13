@@ -5,9 +5,9 @@ import { usePortal } from './PortalApp'
 import { Panel, PageHead, Tabs, Field, Toggle, Modal, Pill } from '../../components/ui'
 import { act, useStore } from '../../store'
 import * as E from '../../lib/engine'
-import { MODULES, CURRENCIES, PARTNERS, DEFAULT_ROLES } from '../../lib/reference'
+import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf } from '../../lib/reference'
 import { AppPreview } from '../app/CustomerApp'
-import { uid } from '../../lib/util'
+import { uid, fmtDate } from '../../lib/util'
 
 const SWATCHES = ['#0E5E6F', '#1D5C4D', '#24409E', '#8C3B2E', '#5B2A86', '#1B2559', '#B4472A', '#2D3748']
 
@@ -15,10 +15,11 @@ export default function Settings() {
   return (
     <>
       <PageHead title="Settings" sub="Brand, corridors, team, domain and business details." />
-      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
+      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
       <Routes>
         <Route index element={<Branding />} />
         <Route path="corridors" element={<Corridors />} />
+        <Route path="integrations" element={<Integrations />} />
         <Route path="team" element={<Team />} />
         <Route path="domain" element={<Domain />} />
         <Route path="business" element={<Business />} />
@@ -54,10 +55,9 @@ function Branding() {
 function Corridors() {
   const { t, actor } = usePortal()
   const [rows, setRows] = useState(t.corridors.map((c) => ({ ...c })))
-  const [partners, setPartners] = useState([...t.partners])
   const upd = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
   const addable = Object.keys(CURRENCIES).filter((c) => !rows.some((r) => r.cur === c))
-  const save = () => saveTenant(t, actor, (tt) => { tt.corridors = rows.map((r) => ({ ...r, fee: +r.fee, margin: +r.margin, min: +r.min, max: +r.max })); tt.partners = partners; partners.forEach((p) => { if (tt.treasury[p] === undefined) tt.treasury[p] = 0 }) }, 'Corridors saved', 'Updated corridors and pricing')
+  const save = () => saveTenant(t, actor, (tt) => { tt.corridors = rows.map((r) => ({ ...r, fee: +r.fee, margin: +r.margin, min: +r.min, max: +r.max })) }, 'Corridors saved', 'Updated corridors and pricing')
   return (
     <div className="stack">
       <Panel title="Corridors & pricing" actions={<div className="row">{addable.length > 0 && <select id="cor-add" className="sel" value="" onChange={(e) => e.target.value && setRows([...rows, { cur: e.target.value, enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 }])}><option value="">Add corridor…</option>{addable.map((c) => <option key={c} value={c}>GBP → {c} ({CURRENCIES[c].country})</option>)}</select>}<button className="btn pri sm" onClick={save}><Save />Save</button></div>}>
@@ -68,11 +68,56 @@ function Corridors() {
             <td className="r num"><b>{(CURRENCIES[r.cur].rate * (1 - (+r.margin || 0) / 100)).toFixed(4)}</b></td></tr>)}</tbody>
         </table></div>
       </Panel>
-      <Panel title="Payout partners" pad>
-        <p className="muted small" style={{ marginBottom: 10 }}>Integrated once at platform level by TheFXSoft. Switch on the ones you have a contract for.</p>
-        <div className="checks">{PARTNERS.filter((p) => p.cur.some((c) => rows.some((r) => r.cur === c))).map((p) => <label key={p.id} className="check"><input type="checkbox" checked={partners.includes(p.id)} onChange={(e) => setPartners(e.target.checked ? [...partners, p.id] : partners.filter((x) => x !== p.id))} /><span>{p.name}<small>{p.cur.join(', ')} · {p.methods.join(', ')}</small></span></label>)}</div>
-      </Panel>
+      <p className="muted small">Payout partners are chosen under Settings → Integrations. A corridor only works when a connected partner covers its currency.</p>
     </div>
+  )
+}
+
+function Integrations() {
+  const { db, t, actor, role } = usePortal()
+  const [req, setReq] = useState(null)
+  const canEdit = role === 'Admin'
+  const kyc = KYC_PROVIDERS.find((k) => k.id === t.integrations.kyc.provider)
+  const myReqs = db.integrationRequests.filter((r) => r.tenantId === t.id)
+  const setKyc = (id) => saveTenant(t, actor, (tt) => { tt.integrations.kyc = { provider: id, status: 'connected' }; tt.checks.kyc = true }, `KYC provider set to ${KYC_PROVIDERS.find((k) => k.id === id).name}`, `Changed KYC provider to ${id}`)
+  const togglePartner = (p) => saveTenant(t, actor, (tt) => { const i = tt.partners.indexOf(p.id); if (i >= 0) tt.partners.splice(i, 1); else { tt.partners.push(p.id); tt.treasury[p.id] = tt.treasury[p.id] || 0; E.ensurePrefundAccount(db, tt, p.id) } }, null, `Toggled payout partner ${p.name}`)
+  const toggleBank = (b) => saveTenant(t, actor, (tt) => { const i = tt.integrations.payin.indexOf(b.id); if (i >= 0) tt.integrations.payin.splice(i, 1); else { tt.integrations.payin.push(b.id); if (!tt.accounts.find((a) => a.id === `bank_${b.id}`)) tt.accounts.push({ id: `bank_${b.id}`, name: `${b.name} (GBP)`, type: 'bank', cur: 'GBP' }) } }, null, `Toggled pay-in bank ${b.name}`)
+  const statusPill = { requested: <Pill tone="warn">Requested</Pill>, quoted: <Pill tone="info">Quote ready</Pill>, accepted: <Pill tone="info">In build</Pill>, live: <Pill tone="good">Live</Pill>, declined: <Pill tone="mute">Declined</Pill> }
+  return (
+    <div className="stack">
+      <div className="banner">Included integrations are ready to switch on. Anything marked <b>custom</b> is scoped and quoted separately by TheFXSoft.</div>
+      <div className="grid2e">
+        <Panel title="Identity verification (KYC)" pad>
+          <div className="stack-s">{KYC_PROVIDERS.filter((k) => k.id !== 'custom').map((k) => <label key={k.id} className="check"><input type="radio" name="kyc" disabled={!canEdit} checked={t.integrations.kyc.provider === k.id} onChange={() => setKyc(k.id)} /><span>{k.name} <Pill tone="good">Included</Pill><small>{k.desc}</small></span></label>)}
+            {t.integrations.kyc.provider === 'custom' && <label className="check"><input type="radio" name="kyc" checked readOnly /><span>{t.integrations.kyc.name || 'Custom provider'} <Pill tone={t.integrations.kyc.status === 'connected' ? 'good' : 'warn'}>{t.integrations.kyc.status}</Pill><small>Custom integration</small></span></label>}
+          </div>
+          <button className="btn sm" style={{ marginTop: 10 }} disabled={!canEdit} onClick={() => setReq('kyc')}>Request a custom KYC integration (extra cost)</button>
+        </Panel>
+        <Panel title="Pay-in banks and card acquirers" pad>
+          <div className="checks">{PAYIN_BANKS.filter((b) => b.id !== 'custom').map((b) => <label key={b.id} className="check"><input type="checkbox" disabled={!canEdit} checked={t.integrations.payin.includes(b.id)} onChange={() => toggleBank(b)} /><span>{b.name}<small>{b.kind} · included</small></span></label>)}</div>
+          <button className="btn sm" style={{ marginTop: 10 }} disabled={!canEdit} onClick={() => setReq('payin')}>Request a custom bank integration (extra cost)</button>
+        </Panel>
+      </div>
+      <Panel title="Payout partners" pad>
+        <div className="checks">{partnersOf(db).filter((p) => !p.tenantId || p.tenantId === t.id).map((p) => <label key={p.id} className="check"><input type="checkbox" disabled={!canEdit} checked={t.partners.includes(p.id)} onChange={() => togglePartner(p)} /><span>{p.name} {p.included ? <Pill tone="good">Included</Pill> : <Pill tone="info">Custom</Pill>}<small>{p.cur.join(', ')} · {p.methods.join(', ')}</small></span></label>)}</div>
+        <button className="btn sm" style={{ marginTop: 10 }} disabled={!canEdit} onClick={() => setReq('payout')}>Request a custom payout partner (extra cost)</button>
+      </Panel>
+      {myReqs.length > 0 && <Panel title="Integration requests"><div className="list">{myReqs.map((r) => <div className="li" key={r.id}><div className="grow"><b>{r.name} <span className="tag">{r.kind}</span></b><small>{r.notes} · requested {fmtDate(r.createdAt, false)}{r.quote ? ` · Quote: £${r.quote.setup.toLocaleString('en-GB')} setup + £${r.quote.monthly}/month, ~${r.quote.weeks} weeks${r.quote.note ? ` — ${r.quote.note}` : ''}` : ''}</small></div><div className="row">{statusPill[r.status]}{r.status === 'quoted' && canEdit && <button className="btn sm pri" onClick={() => act((d) => E.setIntegrationStatus(d, r.id, 'accepted', actor), 'Quote accepted — TheFXSoft will start the build')}>Accept quote</button>}</div></div>)}</div></Panel>}
+      {req && <RequestModal kind={req} onClose={() => setReq(null)} />}
+    </div>
+  )
+}
+function RequestModal({ kind, onClose }) {
+  const { t, actor } = usePortal()
+  const [f, setF] = useState({ name: '', notes: '' })
+  const label = { kyc: 'KYC provider', payout: 'payout partner', payin: 'bank or acquirer' }[kind]
+  const ok = () => act((d) => E.requestIntegration(d, t.id, { kind, ...f, cur: t.corridors.map((c) => c.cur) }, actor), 'Request sent to TheFXSoft — you will get a quote') && onClose()
+  return (
+    <Modal title={`Request a custom ${label}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn pri" onClick={ok}>Send request</button></>}>
+      <p className="muted small">Custom integrations are scoped and quoted separately: a one-off setup fee, a monthly fee and a build time. Included integrations carry no extra cost.</p>
+      <Field label={`${label[0].toUpperCase() + label.slice(1)} name`} id="rq-n"><input id="rq-n" className="inp" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+      <Field label="Why / what you need" id="rq-t"><textarea id="rq-t" className="ta" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+    </Modal>
   )
 }
 

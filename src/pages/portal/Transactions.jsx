@@ -81,7 +81,7 @@ export function TxDrawer({ id, onClose }) {
   if (!x) return null
   const c = db.customers.find((k) => k.id === x.customerId), r = db.recipients.find((k) => k.id === x.recipientId)
   const k = x.caseId && db.cases.find((z) => z.id === x.caseId)
-  const p = partnerById(x.partnerId)
+  const p = partnerById(db, x.partnerId)
   const canRelease = canDecide && x.status === 'pending_release'
   const canCancel = ['awaiting_funds', 'on_hold', 'pending_release', 'funds_received'].includes(x.status) && (canDecide || x.status === 'awaiting_funds')
   return (
@@ -129,7 +129,7 @@ function NewTransfer({ onClose }) {
   const [f, setF] = useState({ customerId: '', recipientId: '', sendAmount: '', purpose: PURPOSES[0], sof: '', pay: true })
   const recs = db.recipients.filter((r) => r.customerId === f.customerId)
   const rec = recs.find((r) => r.id === f.recipientId)
-  const q = rec ? E.quote(t, rec.cur, f.sendAmount) : null
+  const q = rec ? E.quote(db, t, rec.cur, f.sendAmount) : null
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const submit = () => {
     const tx = act((d) => {

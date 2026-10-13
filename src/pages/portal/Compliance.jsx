@@ -20,12 +20,13 @@ export default function Compliance() {
       <Route path="policies/:key" element={<PolicyEditor />} />
       <Route path="*" element={
         <>
-          <PageHead title="Compliance" sub="Cases, monitoring rules, screening, SARs and policies." />
-          <Tabs items={[{ to: '/portal/compliance', label: 'Cases', end: true, count: open }, { to: '/portal/compliance/rules', label: 'Monitoring rules' }, { to: '/portal/compliance/release', label: 'Auto-release' }, { to: '/portal/compliance/screening', label: 'Screening' }, { to: '/portal/compliance/sars', label: 'SARs', count: sars }, { to: '/portal/compliance/policies', label: 'Policies' }]} />
+          <PageHead title="Compliance" sub={`Cases, monitoring rules, screening, SARs and policies. ${t.name} and its MLRO are responsible for how these tools are configured and used; TheFXSoft provides the software.`} />
+          <Tabs items={[{ to: '/portal/compliance', label: 'Cases', end: true, count: open }, { to: '/portal/compliance/rules', label: 'Monitoring rules' }, { to: '/portal/compliance/release', label: 'Auto-release' }, { to: '/portal/compliance/risk', label: 'Risk scoring' }, { to: '/portal/compliance/screening', label: 'Screening' }, { to: '/portal/compliance/sars', label: 'SARs', count: sars }, { to: '/portal/compliance/policies', label: 'Policies' }]} />
           <Routes>
             <Route index element={<Cases />} />
             <Route path="rules" element={<Rules />} />
             <Route path="release" element={<AutoRelease />} />
+            <Route path="risk" element={<RiskSettings />} />
             <Route path="screening" element={<Screening />} />
             <Route path="sars" element={<Sars />} />
             <Route path="policies" element={<Policies />} />
@@ -246,8 +247,8 @@ function Rules() {
 function RuleModal({ rule, onSave, onClose }) {
   const [r, setR] = useState(rule)
   const def = RULE_TYPES[r.type]
-  const setP = (k, v, type) => setR({ ...r, params: { ...r.params, [k]: type === 'list' ? v.split(',').map((x) => x.trim().toUpperCase().replace(/^(LOW|MEDIUM|HIGH)$/i, (m) => m[0] + m.slice(1).toLowerCase())).filter(Boolean) : +v } })
-  const changeType = (type) => setR({ ...r, type, name: r.name || RULE_TYPES[type].label, params: Object.fromEntries(RULE_TYPES[type].params.map((p) => [p.k, p.type === 'list' ? [] : (r.params[p.k] ?? 1000)])) })
+  const setP = (k, v, type) => setR({ ...r, params: { ...r.params, [k]: type === 'list' ? v.split(',').map((x) => x.trim()).filter(Boolean).map((x) => (r.type === 'docs_required' ? x : x.toUpperCase().replace(/^(LOW|MEDIUM|HIGH)$/i, (m) => m[0] + m.slice(1).toLowerCase()))) : type === 'text' ? v : +v } })
+  const changeType = (type) => setR({ ...r, type, name: r.name || RULE_TYPES[type].label, params: Object.fromEntries(RULE_TYPES[type].params.map((p) => [p.k, p.type === 'list' ? [] : p.type === 'text' ? 'all' : (r.params[p.k] ?? 1000)])) })
   return (
     <Modal title={rule.name ? 'Edit rule' : 'New rule'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn pri" onClick={() => r.name.trim() ? onSave(r) : null}><Save />Save rule</button></>}>
       {r.explanation && <div className="banner">{r.explanation}</div>}
@@ -255,6 +256,7 @@ function RuleModal({ rule, onSave, onClose }) {
         <Field label="Name" id="r-n"><input id="r-n" className="inp" value={r.name} onChange={(e) => setR({ ...r, name: e.target.value })} /></Field>
         <Field label="Condition type" id="r-t"><select id="r-t" className="sel" value={r.type} onChange={(e) => changeType(e.target.value)}>{Object.entries(RULE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
         {def.params.map((p) => <Field key={p.k} label={p.label} id={`r-${p.k}`}><input id={`r-${p.k}`} className="inp" value={p.type === 'list' ? (r.params[p.k] || []).join(', ') : r.params[p.k] ?? ''} onChange={(e) => setP(p.k, e.target.value, p.type)} /></Field>)}
+        {r.type === 'docs_required' && <p className="muted small" style={{ gridColumn: '1 / -1' }}>Document names: Photo ID, Proof of address, Source of funds evidence. Customer type: first-time, existing or all.</p>}
         <Field label="Action" id="r-a"><select id="r-a" className="sel" value={r.action} onChange={(e) => setR({ ...r, action: e.target.value })}><option value="flag">Flag (alert only)</option><option value="hold">Hold for review</option><option value="block">Block (MLRO release)</option></select></Field>
         <Field label="Severity" id="r-s"><select id="r-s" className="sel" value={r.severity} onChange={(e) => setR({ ...r, severity: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></Field>
       </div>
@@ -295,6 +297,26 @@ function AutoRelease() {
         </ol>
         <p className="muted small" style={{ marginTop: 10 }}>Note the thresholds here also feed the default rules (EDD, source of funds). Edit the rules themselves on the Monitoring rules tab.</p>
       </Panel>
+    </div>
+  )
+}
+
+/* ---------------- Risk scoring ---------------- */
+const RISK_FACTORS = [['pep', 'Customer is a politically exposed person'], ['screeningMatch', 'Unresolved sanctions / PEP screening match'], ['confirmedMatch', 'Confirmed sanctions match'], ['kycIncomplete', 'Identity not verified'], ['under21', 'Sender under 21'], ['business', 'Business customer'], ['highVolume', 'Sent more than 2× the EDD threshold in 30 days'], ['openCase', 'Each open compliance case']]
+function RiskSettings() {
+  const { db, t, actor, role } = usePortal()
+  const canEdit = ['Admin', 'MLRO'].includes(role)
+  const [w, setW] = useState({ ...t.compliance.riskWeights })
+  const save = () => act((d) => { const tt = d.tenants.find((x) => x.id === t.id); tt.compliance.riskWeights = Object.fromEntries(Object.entries(w).map(([k, v]) => [k, +v || 0])); d.customers.filter((c) => c.tenantId === t.id).forEach((c) => E.computeRisk(d, c)); E.audit(d, { tenantId: t.id, actor, action: 'Updated risk scoring weights', target: '' }) }, 'Risk weights saved and all customers re-scored')
+  const custs = db.customers.filter((c) => c.tenantId === t.id)
+  const dist = ['Low', 'Medium', 'High'].map((l) => [l, custs.filter((c) => riskLevel(c) === l).length])
+  return (
+    <div className="grid2">
+      <Panel title="Risk factors and points" actions={canEdit && <button className="btn pri sm" onClick={save}><Save />Save & re-score</button>}>
+        <div className="tbl-wrap"><table><thead><tr><th>Factor</th><th className="r">Points</th></tr></thead><tbody>{RISK_FACTORS.map(([k, l]) => <tr key={k}><td>{l}</td><td className="r"><input className="inp num" style={{ width: 90, textAlign: 'right' }} value={w[k] ?? 0} disabled={!canEdit} onChange={(e) => setW({ ...w, [k]: e.target.value })} aria-label={l} /></td></tr>)}</tbody></table></div>
+        <div className="panel-b muted small">Every customer starts at 10 points. 25+ = Medium, 50+ = High. High-risk customers trigger the "High-risk customer" monitoring rule and are listed for enhanced due diligence. Staff can override a rating on the customer's page.</div>
+      </Panel>
+      <Panel title="Current distribution" pad>{dist.map(([l, n]) => <div className="hbar" key={l}><span><RiskPill level={l} /></span><div className="track"><div className="fill" style={{ width: `${custs.length ? (n / custs.length) * 100 : 0}%`, background: `var(--${{ Low: 'good', Medium: 'warn', High: 'crit' }[l]})` }} /></div><span className="num" style={{ textAlign: 'right' }}>{n}</span></div>)}</Panel>
     </div>
   )
 }

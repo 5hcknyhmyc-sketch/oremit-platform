@@ -27,7 +27,7 @@ export default function Login() {
           <div className="personas">
             <button className="persona" onClick={() => { login({ kind: 'super' }); nav('/admin') }}>
               <div className="row"><ShieldCheck size={20} /><b>Super Admin</b></div>
-              <small>TheFXSoft. All MSBs, approvals, payout network, billing.</small>
+              <small>TheFXSoft. All MSBs, go-live approvals, integration requests, billing.</small>
             </button>
             <button className="persona" onClick={tryOnboarding}>
               <div className="row"><Link2 size={20} /><b>Onboarding link</b></div>

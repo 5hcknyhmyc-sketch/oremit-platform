@@ -27,6 +27,17 @@ Rejected transfers are refunded; every step is on the transfer's timeline and in
 - Risk scoring per customer with manual override.
 - Policy templates (AML/CTF, risk assessment, CDD, privacy notice, fraud guide, complaints) with versions and MLRO approval.
 
+### Integrations (chosen at sign-up, changeable in Settings → Integrations)
+- **KYC**: Didit or Shufti Pro included; custom provider quoted separately.
+- **Payout**: Daytona Capital Management included; custom partners quoted separately (Super Admin → Integration requests: quote → MSB accepts → mark live).
+- **Pay-in**: ClearBank, Revolut Business, EM Bank, Secure Trading, Bombora Transact365 included.
+
+### Ledger (Treasury)
+Double-entry journals per MSB (`db.journals`, `tenant.accounts`): customer payments, payouts (prefund, fee income, FX income), refunds and top-ups post automatically; expenses and transfers between accounts are manual. Trial balance and CSV export.
+
+### Responsibility
+TheFXSoft provides the software and integrations. Each MSB self-declares its FCA/HMRC status at onboarding and is responsible for its own regulatory compliance, including how it configures rules, thresholds and policies. Super Admin approval is a commercial/technical go-live checklist, not a regulatory check.
+
 ### Built-in AI
 `netlify/functions/ai.mjs` calls the Anthropic API for: the assistant panel (questions over the MSB's live data), case review, policy drafting, and plain-English → rule. Without a key, the UI falls back to rule-based summaries so the demo still works.
 

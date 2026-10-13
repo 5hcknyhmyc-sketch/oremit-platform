@@ -11,17 +11,29 @@ export const CURRENCIES = {
   EUR: { country: 'Eurozone (SEPA)', rate: 1.17 },
 }
 
+// Payout partners integrated at platform level. Daytona is included; anything else is a custom integration quoted separately.
 export const PARTNERS = [
-  { id: 'p1', name: 'Indus Payout Network', cur: ['PKR'], methods: ['Bank', 'Cash pickup', 'Mobile wallet'] },
-  { id: 'p2', name: 'Bharat Rails', cur: ['INR'], methods: ['Bank', 'UPI'] },
-  { id: 'p3', name: 'Lagos Settle', cur: ['NGN', 'GHS'], methods: ['Bank', 'Mobile wallet'] },
-  { id: 'p4', name: 'Dhaka Direct', cur: ['BDT'], methods: ['Bank', 'Mobile wallet', 'Cash pickup'] },
-  { id: 'p5', name: 'Pacific Payouts', cur: ['PHP'], methods: ['Bank', 'Cash pickup'] },
-  { id: 'p6', name: 'EastPay Mobile', cur: ['KES'], methods: ['Mobile money'] },
-  { id: 'p7', name: 'SEPA Gateway', cur: ['EUR'], methods: ['Bank'] },
+  { id: 'daytona', name: 'Daytona Capital Management', cur: ['PKR', 'INR', 'NGN', 'BDT', 'PHP', 'KES', 'GHS', 'EUR'], methods: ['Bank', 'Cash pickup', 'Mobile wallet'], included: true, desc: 'Pre-integrated. Bank, cash pickup and wallet payouts across all platform corridors.' },
 ]
-export const partnerById = (id) => PARTNERS.find((p) => p.id === id)
-export const partnerFor = (cur, enabled) => PARTNERS.find((p) => p.cur.includes(cur) && (!enabled || enabled.includes(p.id)))
+export const partnersOf = (db) => [...PARTNERS, ...(db.customPartners || [])]
+export const partnerById = (db, id) => partnersOf(db).find((p) => p.id === id)
+export const partnerFor = (db, t, cur) => partnersOf(db).find((p) => p.cur.includes(cur) && t.partners.includes(p.id) && (p.status || 'live') === 'live')
+
+// KYC / identity providers already integrated. MSB picks one at sign-up.
+export const KYC_PROVIDERS = [
+  { id: 'didit', name: 'Didit', included: true, desc: 'ID document + liveness, AML screening, proof of address. Included in your plan.' },
+  { id: 'shufti', name: 'Shufti Pro', included: true, desc: 'ID document + face match, AML screening, address verification. Included in your plan.' },
+  { id: 'custom', name: 'Custom KYC integration', included: false, desc: 'Bring your own provider. Scoped and quoted separately by TheFXSoft.' },
+]
+// Pay-in / banking rails already integrated.
+export const PAYIN_BANKS = [
+  { id: 'clearbank', name: 'ClearBank', kind: 'Bank account (Faster Payments, CHAPS)', included: true },
+  { id: 'revolut', name: 'Revolut Business', kind: 'Bank account', included: true },
+  { id: 'embank', name: 'EM Bank', kind: 'Safeguarding + corporate accounts', included: true },
+  { id: 'securetrading', name: 'Secure Trading', kind: 'Card payments', included: true },
+  { id: 'transact365', name: 'Bombora Transact365', kind: 'Card payments', included: true },
+  { id: 'custom', name: 'Custom bank integration', kind: 'Quoted separately', included: false },
+]
 
 export const MODULES = [
   { id: 'dashboard', label: 'Dashboard' },

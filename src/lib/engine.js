@@ -1,6 +1,6 @@
 // The platform engine. Every operation takes the database object `db` and mutates it.
 // In production each op maps to an API endpoint / database transaction (see docs/ARCHITECTURE.md).
-import { CURRENCIES, PARTNERS, partnerFor, DEFAULT_ROLES } from './reference'
+import { CURRENCIES, PARTNERS, partnerFor, partnerById, KYC_PROVIDERS, PAYIN_BANKS, DEFAULT_ROLES } from './reference'
 import { evaluate, decide, topSeverity, defaultRules } from './rules'
 import { screenName } from './screening'
 import { defaultPolicies } from './policies'
@@ -25,10 +25,13 @@ export function makeTenant(o) {
     brand: { color: '#1B2559', accent: '#F2A541', logo: null, appName: o.name, ...(o.brand || {}) },
     corridors: (o.corridors || []).map((c) => (typeof c === 'string' ? { cur: c, enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 } : c)),
     partners: o.partners || [],
+    integrations: { kyc: { provider: 'didit', status: 'connected' }, payin: ['clearbank'], ...(o.integrations || {}) },
+    declaration: o.declaration || null,
     compliance: {
       mlro: '', eddThreshold: 5000, sofThreshold: 2000, dailyLimit: 10000, screeningThreshold: 85,
       requireKycBeforeSend: true, idv: 'Document + selfie liveness', screening: 'Real-time sanctions + PEP',
       autoRelease: { enabled: true, maxAmount: 2000 },
+      riskWeights: { pep: 40, screeningMatch: 30, confirmedMatch: 80, kycIncomplete: 10, under21: 10, business: 5, highVolume: 15, openCase: 10 },
       ...(o.compliance || {}),
     },
     bank: o.bank || { name: `${o.legalName || o.name} — client account`, sortCode: '04-00-75', account: String(10000000 + Math.floor(Math.random() * 89999999)) },
@@ -40,7 +43,85 @@ export function makeTenant(o) {
   }
   t.rules = o.rules || defaultRules(t.compliance.eddThreshold, t.compliance.sofThreshold)
   t.policies = o.policies || defaultPolicies(t)
+  t.accounts = o.accounts || defaultAccounts(t)
   return t
+}
+
+/* ---------------- Ledger (double entry) ---------------- */
+// Account types: bank (pay-in/operating accounts), prefund (balance held with a payout partner),
+// liability (customer money owed out), income, expense.
+export function defaultAccounts(t) {
+  const acc = []
+  for (const b of t.integrations.payin || []) { const bank = PAYIN_BANKS.find((x) => x.id === b); if (bank) acc.push({ id: `bank_${b}`, name: `${bank.name} (GBP)`, type: 'bank', cur: 'GBP' }) }
+  if (!acc.length) acc.push({ id: 'bank_main', name: 'Main bank account (GBP)', type: 'bank', cur: 'GBP' })
+  acc.push({ id: 'client_funds', name: 'Customer funds payable', type: 'liability', cur: 'GBP' })
+  for (const p of t.partners) acc.push({ id: `prefund_${p}`, name: `Prefund — ${PARTNERS.find((x) => x.id === p)?.name || p}`, type: 'prefund', cur: 'GBP', partnerId: p })
+  acc.push({ id: 'inc_fees', name: 'Transfer fee income', type: 'income', cur: 'GBP' }, { id: 'inc_fx', name: 'FX margin income', type: 'income', cur: 'GBP' })
+  acc.push({ id: 'exp_it', name: 'IT & software expenses', type: 'expense', cur: 'GBP' }, { id: 'exp_partner', name: 'Partner charges', type: 'expense', cur: 'GBP' }, { id: 'exp_staff', name: 'Staff costs', type: 'expense', cur: 'GBP' }, { id: 'exp_other', name: 'Other operating expenses', type: 'expense', cur: 'GBP' })
+  return acc
+}
+export function ensurePrefundAccount(db, t, partnerId) {
+  if (!t.accounts.find((a) => a.id === `prefund_${partnerId}`)) t.accounts.push({ id: `prefund_${partnerId}`, name: `Prefund — ${partnerById(db, partnerId)?.name || partnerId}`, type: 'prefund', cur: 'GBP', partnerId })
+}
+// Post a balanced journal. lines: [{ account, debit, credit }]
+export function post(db, tenantId, { type, details, lines, ref = '', by = 'System', at = now() }) {
+  const dr = lines.reduce((a, l) => a + (+l.debit || 0), 0), cr = lines.reduce((a, l) => a + (+l.credit || 0), 0)
+  if (Math.abs(dr - cr) > 0.005) fail(`Journal does not balance (debits £${dr.toFixed(2)}, credits £${cr.toFixed(2)}).`)
+  db.counters.journal = (db.counters.journal || 1000) + 1
+  const j = { id: uid('jnl'), no: db.counters.journal, tenantId, type, details, ref, by, at, lines: lines.map((l) => ({ account: l.account, debit: +(+l.debit || 0).toFixed(2), credit: +(+l.credit || 0).toFixed(2) })) }
+  db.journals.unshift(j)
+  return j
+}
+// Balance of an account: bank/prefund/expense increase with debits; liability/income increase with credits.
+export function balance(db, t, accountId) {
+  const acc = t.accounts.find((a) => a.id === accountId)
+  let dr = 0, cr = 0
+  for (const j of db.journals) if (j.tenantId === t.id) for (const l of j.lines) if (l.account === accountId) { dr += l.debit; cr += l.credit }
+  return +(['liability', 'income'].includes(acc?.type) ? cr - dr : dr - cr).toFixed(2)
+}
+export function addExpense(db, tenantId, d, actor, at = now()) {
+  const t = tenantOf(db, tenantId)
+  if (!(+d.amount > 0)) fail('Enter an amount.')
+  if (!d.details?.trim()) fail('Enter what the payment was for.')
+  return post(db, tenantId, { type: 'EXP', details: d.details.trim(), by: actor, at: d.date ? new Date(d.date).getTime() : at, lines: [{ account: d.expenseAccount, debit: +d.amount }, { account: d.paidFrom, credit: +d.amount }] })
+}
+export function transferFunds(db, tenantId, d, actor, at = now()) {
+  if (!(+d.amount > 0)) fail('Enter an amount.')
+  if (d.from === d.to) fail('Choose two different accounts.')
+  return post(db, tenantId, { type: 'TRF', details: d.details || 'Transfer between accounts', by: actor, at, lines: [{ account: d.to, debit: +d.amount }, { account: d.from, credit: +d.amount }] })
+}
+
+/* ---------------- Integration requests (custom KYC / payout / bank) ---------------- */
+export function requestIntegration(db, tenantId, d, actor, at = now()) {
+  if (!d.name?.trim()) fail('Enter the provider name.')
+  const r = { id: uid('req'), tenantId, kind: d.kind, name: d.name.trim(), notes: d.notes || '', cur: d.cur || [], status: 'requested', quote: null, createdAt: at, by: actor }
+  db.integrationRequests.unshift(r)
+  audit(db, { tenantId, actor, action: `Requested custom ${d.kind} integration`, target: r.name, at })
+  return r
+}
+export function quoteIntegration(db, reqId, d, actor, at = now()) {
+  const r = db.integrationRequests.find((x) => x.id === reqId) || fail('Request not found')
+  r.quote = { setup: +d.setup || 0, monthly: +d.monthly || 0, weeks: +d.weeks || 0, note: d.note || '' }
+  r.status = 'quoted'
+  audit(db, { tenantId: r.tenantId, actor, action: `Quoted custom ${r.kind} integration £${r.quote.setup} setup`, target: r.name, at })
+}
+export function setIntegrationStatus(db, reqId, status, actor, at = now()) {
+  const r = db.integrationRequests.find((x) => x.id === reqId) || fail('Request not found')
+  r.status = status
+  const t = tenantOf(db, r.tenantId)
+  if (status === 'live') {
+    if (r.kind === 'payout') {
+      const id = `custom_${r.id}`
+      db.customPartners.push({ id, name: r.name, cur: r.cur.length ? r.cur : t.corridors.map((c) => c.cur), methods: ['Bank'], included: false, tenantId: t.id, status: 'live' })
+      if (!t.partners.includes(id)) t.partners.push(id)
+      t.treasury[id] = t.treasury[id] || 0
+      ensurePrefundAccount(db, t, id)
+      t.checks.payout = true
+    }
+    if (r.kind === 'kyc') { t.integrations.kyc = { provider: 'custom', name: r.name, status: 'connected' }; t.checks.kyc = true }
+    if (r.kind === 'payin') { t.integrations.payin.push('custom'); t.accounts.push({ id: `bank_${r.id}`, name: `${r.name} (GBP)`, type: 'bank', cur: 'GBP' }) }
+  }
+  audit(db, { tenantId: r.tenantId, actor, action: `Custom ${r.kind} integration ${status.replace('_', ' ')}`, target: r.name, at })
 }
 export const tenantOf = (db, id) => db.tenants.find((t) => t.id === id) || fail('MSB not found')
 
@@ -63,12 +144,17 @@ export function completeOnboarding(db, token, data, seconds) {
     brand: { color: data.color, accent: data.accent, logo: data.logo, appName: data.appName || data.name },
     corridors: data.corridors.map((cur) => ({ cur, enabled: true, fee: +data.fee || 0, margin: +data.margin || 0, min: 10, max: +data.daily || 10000 })),
     partners: data.partners,
+    integrations: { kyc: { provider: data.kyc, status: data.kyc === 'custom' ? 'requested' : 'connected' }, payin: data.payin },
+    declaration: { accepted: !!data.declaration, by: data.ownerName || data.email, at: now() },
     compliance: { mlro: data.mlro, eddThreshold: +data.edd, sofThreshold: +data.sof, dailyLimit: +data.daily, idv: data.idv, screening: data.screening, autoRelease: { enabled: true, maxAmount: Math.min(2000, +data.sof || 2000) } },
     staff: [{ id: uid('stf'), name: data.ownerName || 'Owner', email: data.email, role: 'Admin' }, ...(data.mlro ? [{ id: uid('stf'), name: data.mlro, email: '', role: 'MLRO' }] : [])],
-    checks: { ch: true, fca: /^\d{6,7}$/.test(data.frn), mlr: /^X[A-Z]ML\d{11}$/i.test(data.mlr) },
+    checks: { reg: /^\d{6,7}$/.test(data.frn) && !!data.mlr, kyc: data.kyc !== 'custom', payout: data.partners.some((p) => PARTNERS.some((x) => x.id === p)), domain: true },
   })
+  if (!data.declaration) fail('Please confirm the declaration before launching.')
   db.tenants.push(t)
   inv.usedBy = t.id
+  if (data.kyc === 'custom') requestIntegration(db, t.id, { kind: 'kyc', name: data.kycCustomName || 'Custom KYC provider', notes: 'Requested at onboarding' }, data.email, now())
+  if (data.payoutCustomName) requestIntegration(db, t.id, { kind: 'payout', name: data.payoutCustomName, notes: 'Requested at onboarding', cur: data.corridors }, data.email, now())
   audit(db, { tenantId: t.id, actor: data.email || data.name, action: `Completed onboarding in ${Math.floor(seconds / 60)}m ${seconds % 60}s`, target: t.name })
   return t
 }
@@ -83,28 +169,30 @@ export function setTenantStatus(db, tenantId, status, actor) {
   t.status = status
   audit(db, { tenantId, actor, action: { live: 'Approved — MSB is live', suspended: 'Suspended MSB' }[status] || `Status → ${status}`, target: t.name })
 }
+// Go-live checklist. Commercial and technical only: the MSB is responsible for its own regulatory status.
 export const APPROVAL_CHECKS = [
-  ['ch', 'Companies House record matches'], ['fca', 'FCA register: firm authorised or registered'], ['mlr', 'HMRC MLR registration valid'],
-  ['dir', 'Director ID and liveness verified'], ['ubo', 'Beneficial owners declared and screened'], ['bank', 'Safeguarding account confirmed'],
+  ['contract', 'Platform agreement signed and plan chosen'], ['reg', 'FCA FRN and HMRC MLR numbers entered (self-declared by the MSB)'],
+  ['kyc', 'KYC provider connected'], ['payout', 'Payout partner connected'], ['prefund', 'Initial prefunding received by the payout partner'], ['domain', 'Subdomain or custom domain live'],
 ]
 
 /* ---------------- Customers & recipients ---------------- */
 export function computeRisk(db, c) {
   const t = db.tenants.find((x) => x.id === c.tenantId)
   const factors = []
+  const w = { pep: 40, screeningMatch: 30, confirmedMatch: 80, kycIncomplete: 10, under21: 10, business: 5, highVolume: 15, openCase: 10, ...(t?.compliance.riskWeights || {}) }
   let score = 10
-  if (c.pep) { score += 40; factors.push('Politically exposed person') }
-  if (c.screening?.status === 'potential_match') { score += 30; factors.push('Unresolved screening match') }
-  if (c.screening?.status === 'confirmed_match') { score += 80; factors.push('Confirmed sanctions match') }
-  if (c.kyc.status !== 'verified') { score += 10; factors.push('Identity not verified') }
+  if (c.pep) { score += w.pep; factors.push('Politically exposed person') }
+  if (c.screening?.status === 'potential_match') { score += w.screeningMatch; factors.push('Unresolved screening match') }
+  if (c.screening?.status === 'confirmed_match') { score += w.confirmedMatch; factors.push('Confirmed sanctions match') }
+  if (c.kyc.status !== 'verified') { score += w.kycIncomplete; factors.push('Identity not verified') }
   const age = ageFrom(c.dob)
-  if (age !== null && age < 21) { score += 10; factors.push('Under 21') }
-  if (c.type === 'business') { score += 5; factors.push('Business customer') }
+  if (age !== null && age < 21) { score += w.under21; factors.push('Under 21') }
+  if (c.type === 'business') { score += w.business; factors.push('Business customer') }
   const recent = db.transactions.filter((x) => x.customerId === c.id && now() - x.createdAt < 30 * DAY && !['cancelled', 'rejected', 'refunded'].includes(x.status))
   const vol = recent.reduce((a, x) => a + x.sendAmount, 0)
-  if (vol > (t?.compliance.eddThreshold || 5000) * 2) { score += 15; factors.push(`£${Math.round(vol).toLocaleString('en-GB')} sent in 30 days`) }
+  if (vol > (t?.compliance.eddThreshold || 5000) * 2) { score += w.highVolume; factors.push(`£${Math.round(vol).toLocaleString('en-GB')} sent in 30 days`) }
   const openCases = db.cases.filter((k) => k.customerId === c.id && k.status !== 'closed').length
-  if (openCases) { score += 10 * openCases; factors.push(`${openCases} open compliance case${openCases > 1 ? 's' : ''}`) }
+  if (openCases) { score += w.openCase * openCases; factors.push(`${openCases} open compliance case${openCases > 1 ? 's' : ''}`) }
   const level = score >= 50 ? 'High' : score >= 25 ? 'Medium' : 'Low'
   c.risk = { ...c.risk, score: Math.min(100, score), level, factors }
 }
@@ -188,13 +276,13 @@ export function resolveScreening(db, caseId, outcome, note, actor, at = now()) {
 }
 
 /* ---------------- Quotes & transactions ---------------- */
-export function quote(t, cur, sendAmount) {
+export function quote(db, t, cur, sendAmount) {
   const cor = t.corridors.find((c) => c.cur === cur && c.enabled)
   if (!cor) return null
   const base = CURRENCIES[cur].rate
   const rate = +(base * (1 - cor.margin / 100)).toFixed(4)
   const amt = Math.max(0, +sendAmount || 0)
-  return { cur, rate, fee: cor.fee, sendAmount: amt, total: +(amt + cor.fee).toFixed(2), receiveAmount: +(amt * rate).toFixed(2), min: cor.min, max: cor.max, partner: partnerFor(cur, t.partners) }
+  return { cur, rate, fee: cor.fee, sendAmount: amt, total: +(amt + cor.fee).toFixed(2), receiveAmount: +(amt * rate).toFixed(2), min: cor.min, max: cor.max, partner: partnerFor(db, t, cur) }
 }
 
 export function createTransaction(db, d, actor = 'Customer', at = now()) {
@@ -203,7 +291,7 @@ export function createTransaction(db, d, actor = 'Customer', at = now()) {
   const c = db.customers.find((x) => x.id === d.customerId) || fail('Choose a customer.')
   if (c.status === 'frozen') fail('This customer is frozen. Contact compliance.')
   const r = db.recipients.find((x) => x.id === d.recipientId) || fail('Choose a recipient.')
-  const q = quote(t, r.cur, d.sendAmount)
+  const q = quote(db, t, r.cur, d.sendAmount)
   if (!q) fail(`${t.name} does not send to ${r.cur}.`)
   if (q.sendAmount < q.min) fail(`The minimum transfer is £${q.min}.`)
   if (q.sendAmount > q.max) fail(`The maximum single transfer is £${q.max.toLocaleString('en-GB')}.`)
@@ -227,7 +315,8 @@ const step = (tx, status, note, actor, at) => { tx.status = status; tx.updatedAt
 
 /* ---------------- Payments in (safeguarding account credits) ---------------- */
 export function recordPayIn(db, tenantId, d, actor = 'Bank feed', at = now()) {
-  const p = { id: uid('pay'), tenantId, amount: +(+d.amount).toFixed(2), payer: d.payer || 'Unknown', reference: (d.reference || '').toUpperCase().trim(), method: d.method || 'Faster Payments', receivedAt: at, status: 'unmatched', txnId: null }
+  const t = tenantOf(db, tenantId)
+  const p = { id: uid('pay'), tenantId, amount: +(+d.amount).toFixed(2), payer: d.payer || 'Unknown', reference: (d.reference || '').toUpperCase().trim(), method: d.method || 'Faster Payments', bankId: d.bankId || t.integrations.payin[0], receivedAt: at, status: 'unmatched', txnId: null }
   db.payIns.unshift(p)
   // Auto-match on reference and amount
   const tx = db.transactions.find((x) => x.tenantId === tenantId && x.status === 'awaiting_funds' && p.reference.includes(x.ref))
@@ -244,6 +333,9 @@ export function matchPayIn(db, payInId, txnId, actor, at = now()) {
   if (p.amount < tx.total - 0.01) fail(`Payment £${p.amount.toFixed(2)} is less than the £${tx.total.toFixed(2)} due.`)
   p.status = 'matched'; p.txnId = tx.id; p.matchedBy = actor
   tx.payInId = p.id
+  const t = tenantOf(db, tx.tenantId)
+  const bankAcc = t.accounts.find((a) => a.id === `bank_${p.bankId}`) || t.accounts.find((a) => a.type === 'bank')
+  post(db, t.id, { type: 'AUTO', details: `Customer payment ${tx.ref} from ${p.payer}`, ref: tx.ref, by: actor, at, lines: [{ account: bankAcc.id, debit: p.amount }, { account: 'client_funds', credit: p.amount }] })
   step(tx, 'funds_received', `£${p.amount.toFixed(2)} received from ${p.payer} (${actor})`, actor, at)
   runCompliance(db, tx, at)
 }
@@ -338,6 +430,7 @@ export function decideCase(db, caseId, decision, note, actor, role, at = now()) 
     if (tx && ['on_hold', 'pending_release', 'funds_received'].includes(tx.status)) {
       step(tx, 'rejected', `Rejected by ${actor}`, actor, at)
       step(tx, 'refunded', `£${tx.total.toFixed(2)} returned to sender's account`, actor, at)
+      refundJournal(db, tx, actor, at)
     }
     closeCase(db, k, 'Rejected and refunded', note, actor, at)
   } else {
@@ -395,6 +488,13 @@ export function decideSar(db, sarId, d, actor, role, at = now()) {
   audit(db, { tenantId: s.tenantId, actor, action: `SAR ${s.ref}: ${s.status.replace('_', ' ')}`, target: '', at })
 }
 
+function refundJournal(db, tx, actor, at) {
+  const t = tenantOf(db, tx.tenantId)
+  const p = tx.payInId && db.payIns.find((x) => x.id === tx.payInId)
+  const bankAcc = (p && t.accounts.find((a) => a.id === `bank_${p.bankId}`)) || t.accounts.find((a) => a.type === 'bank')
+  post(db, t.id, { type: 'AUTO', details: `Refund ${tx.ref}`, ref: tx.ref, by: actor, at, lines: [{ account: 'client_funds', debit: tx.total }, { account: bankAcc.id, credit: tx.total }] })
+}
+
 /* ---------------- Release & payout ---------------- */
 export function release(db, txnId, actor, at = now(), internal = false) {
   const tx = db.transactions.find((x) => x.id === txnId) || fail('Transfer not found')
@@ -402,37 +502,47 @@ export function release(db, txnId, actor, at = now(), internal = false) {
   const t = tenantOf(db, tx.tenantId)
   const bal = t.treasury[tx.partnerId] || 0
   if (bal < tx.sendAmount) {
-    tx.note = `Waiting for prefunding: ${PARTNERS.find((p) => p.id === tx.partnerId)?.name} balance £${Math.round(bal)}`
-    if (!internal) fail(`Not enough prefunding with ${PARTNERS.find((p) => p.id === tx.partnerId)?.name}. Top up in Treasury first.`)
+    tx.note = `Waiting for prefunding: ${partnerById(db, tx.partnerId)?.name} balance £${Math.round(bal)}`
+    if (!internal) fail(`Not enough prefunding with ${partnerById(db, tx.partnerId)?.name}. Top up in Treasury first.`)
     return false
   }
   t.treasury[tx.partnerId] = +(bal - tx.sendAmount).toFixed(2)
   tx.note = ''
-  step(tx, 'released', `Sent to ${PARTNERS.find((p) => p.id === tx.partnerId)?.name}`, actor, at)
+  ensurePrefundAccount(db, t, tx.partnerId)
+  const cor = t.corridors.find((c) => c.cur === tx.cur)
+  const fx = +(tx.sendAmount * ((cor?.margin || 0) / 100)).toFixed(2)
+  post(db, t.id, { type: 'AUTO', details: `Payout ${tx.ref} via ${partnerById(db, tx.partnerId)?.name}`, ref: tx.ref, by: actor, at, lines: [
+    { account: 'client_funds', debit: tx.total }, { account: `prefund_${tx.partnerId}`, credit: +(tx.sendAmount - fx).toFixed(2) }, { account: 'inc_fx', credit: fx }, { account: 'inc_fees', credit: tx.fee },
+  ] })
+  step(tx, 'released', `Sent to ${partnerById(db, tx.partnerId)?.name}`, actor, at)
   return true
 }
 
 export function completePayout(db, txnId, at = now()) {
   const tx = db.transactions.find((x) => x.id === txnId)
   if (!tx || tx.status !== 'released') return
-  step(tx, 'paid', `${tx.receiveAmount.toLocaleString('en-GB')} ${tx.cur} paid out (${tx.method})`, PARTNERS.find((p) => p.id === tx.partnerId)?.name || 'Partner', at)
+  step(tx, 'paid', `${tx.receiveAmount.toLocaleString('en-GB')} ${tx.cur} paid out (${tx.method})`, partnerById(db, tx.partnerId)?.name || 'Partner', at)
 }
 
 export function cancelTransaction(db, txnId, actor, at = now()) {
   const tx = db.transactions.find((x) => x.id === txnId)
   if (tx.status === 'awaiting_funds') step(tx, 'cancelled', 'Cancelled before payment', actor, at)
-  else if (['on_hold', 'pending_release', 'funds_received'].includes(tx.status)) { step(tx, 'cancelled', 'Cancelled', actor, at); step(tx, 'refunded', `£${tx.total.toFixed(2)} returned`, actor, at) }
+  else if (['on_hold', 'pending_release', 'funds_received'].includes(tx.status)) { step(tx, 'cancelled', 'Cancelled', actor, at); step(tx, 'refunded', `£${tx.total.toFixed(2)} returned`, actor, at); refundJournal(db, tx, actor, at) }
   else fail('This transfer can no longer be cancelled.')
   const k = tx.caseId && db.cases.find((x) => x.id === tx.caseId)
   if (k && k.status !== 'closed') closeCase(db, k, 'Transfer cancelled', '', actor, at)
 }
 
-export function topUp(db, tenantId, partnerId, amount, actor, at = now()) {
+export function topUp(db, tenantId, partnerId, amount, actor, at = now(), fromAccount = null) {
   const t = tenantOf(db, tenantId)
   if (!(+amount > 0)) fail('Enter an amount.')
   t.treasury[partnerId] = +((t.treasury[partnerId] || 0) + +amount).toFixed(2)
   t.topUps.unshift({ id: uid('top'), partnerId, amount: +amount, at, by: actor })
-  audit(db, { tenantId, actor, action: `Prefunded £${(+amount).toLocaleString('en-GB')}`, target: PARTNERS.find((p) => p.id === partnerId)?.name, at })
+  ensurePrefundAccount(db, t, partnerId)
+  const from = fromAccount || t.accounts.find((a) => a.type === 'bank')?.id
+  post(db, tenantId, { type: 'TRF', details: `Prefunding ${partnerById(db, partnerId)?.name}`, by: actor, at, lines: [{ account: `prefund_${partnerId}`, debit: +amount }, { account: from, credit: +amount }] })
+  if (t.status === 'review') t.checks.prefund = true
+  audit(db, { tenantId, actor, action: `Prefunded £${(+amount).toLocaleString('en-GB')}`, target: partnerById(db, partnerId)?.name, at })
   // Retry anything waiting for funds at this partner
   for (const tx of db.transactions.filter((x) => x.tenantId === tenantId && x.partnerId === partnerId && x.status === 'pending_release' && x.note?.startsWith('Waiting for prefunding'))) {
     if (t.compliance.autoRelease.enabled && tx.sendAmount <= t.compliance.autoRelease.maxAmount) release(db, tx.id, 'Auto-release', at, true)

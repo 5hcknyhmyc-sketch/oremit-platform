@@ -10,7 +10,9 @@ import { gbp2, num, fmtDate, initials } from '../../lib/util'
 /* ---------- Static preview used by Settings → Branding and the onboarding wizard ---------- */
 export function AppPreview({ t }) {
   const cur = t.corridors.find((c) => c.enabled)?.cur || 'PKR'
-  const q = E.quote(t, cur, 500) || { rate: CURRENCIES[cur].rate, fee: 0, receiveAmount: 500 * CURRENCIES[cur].rate, cur }
+  const cor = t.corridors.find((c) => c.enabled)
+  const rate = +(CURRENCIES[cur].rate * (1 - (cor?.margin || 0) / 100)).toFixed(4)
+  const q = { rate, fee: cor?.fee || 0, receiveAmount: 500 * rate, cur }
   return (
     <div className="app" style={brandVars(t)}>
       <div className="app-top"><div className="row"><div className="lg">{t.brand.logo ? <img src={t.brand.logo} alt="" /> : initials(t.brand.appName || t.name)}</div><b>{t.brand.appName || t.name}</b></div><div className="hi">Hi Bilal</div><div className="sub">Send money home in minutes</div></div>
@@ -113,7 +115,7 @@ function AppHome({ t, c }) {
   const curs = t.corridors.filter((x) => x.enabled)
   const [amt, setAmt] = useState('500')
   const [cur, setCur] = useState(curs[0]?.cur)
-  const q = E.quote(t, cur, amt)
+  const q = E.quote(db, t, cur, amt)
   const tx = db.transactions.filter((x) => x.customerId === c.id).slice(0, 3)
   const kycNeeded = c.kyc.status === 'not_started'
   return (
@@ -143,7 +145,7 @@ function Send({ t, c }) {
   const [step, setStep] = useState(0)
   const [f, setF] = useState({ amt: state.amt || 500, cur: state.cur || t.corridors[0]?.cur, recipientId: recs[0]?.id || '', purpose: PURPOSES[0], sof: '', f1: false, f2: false, f3: false })
   const rec = recs.find((r) => r.id === f.recipientId)
-  const q = rec ? E.quote(t, rec.cur, f.amt) : null
+  const q = rec ? E.quote(db, t, rec.cur, f.amt) : null
   const needSof = f.amt > t.compliance.sofThreshold
   const [tx, setTx] = useState(null)
   const fraud = t.policies.find((p) => p.key === 'fraud')

@@ -4,7 +4,7 @@ import { usePortal } from './PortalApp'
 import { Kpi, Panel, PageHead, SevStripe, Empty } from '../../components/ui'
 import { TxTable } from './Transactions'
 import { gbp, DAY, ago } from '../../lib/util'
-import { PARTNERS } from '../../lib/reference'
+import { partnerById } from '../../lib/reference'
 import { riskLevel } from '../../lib/rules'
 
 export default function Dashboard() {
@@ -30,7 +30,7 @@ export default function Dashboard() {
     ...unmatched.map((p) => ({ sev: 'medium', title: `Unmatched payment £${p.amount.toFixed(2)}`, sub: `From ${p.payer} · reference “${p.reference || 'none'}”`, to: '/portal/payments', need: 'payments' })),
     ...kycPending.map((c) => ({ sev: 'low', title: `Documents to review: ${c.name}`, sub: c.kyc.docs.filter((d) => d.status === 'pending').map((d) => d.type).join(', '), to: `/portal/customers/${c.id}`, need: 'customers' })),
     ...sars.map((s) => ({ sev: 'high', title: `${s.ref} waiting for MLRO decision`, sub: s.grounds.slice(0, 90) + '…', to: '/portal/compliance/sars', need: 'compliance' })),
-    ...lowBal.map(([p, b]) => ({ sev: 'medium', title: `Low prefunding: ${PARTNERS.find((x) => x.id === p)?.name}`, sub: `${gbp(b)} left`, to: '/portal/treasury', need: 'treasury' })),
+    ...lowBal.map(([p, b]) => ({ sev: 'medium', title: `Low prefunding: ${partnerById(db, p)?.name}`, sub: `${gbp(b)} left`, to: '/portal/treasury', need: 'treasury' })),
   ].filter((a) => can(a.need))
   const sevRank = { high: 0, medium: 1, low: 2 }
   attention.sort((a, b) => sevRank[a.sev] - sevRank[b.sev])

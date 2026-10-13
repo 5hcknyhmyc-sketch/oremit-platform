@@ -1,6 +1,6 @@
 // Client for the built-in AI assistant. Calls the Netlify function, which holds the Anthropic API key.
 // When the key isn't set (or running locally without functions), we fall back to rule-based answers.
-import { TX_STATUS, CURRENCIES, partnerById } from './reference'
+import { TX_STATUS, CURRENCIES } from './reference'
 import { RULE_TYPES, riskLevel } from './rules'
 import { gbp, gbp2, fmtDate, ageFrom } from './util'
 

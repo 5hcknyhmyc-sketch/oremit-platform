@@ -72,7 +72,7 @@ export default function PortalApp() {
               <Route path="customers" element={guard('customers', <Customers />)} />
               <Route path="customers/:id" element={guard('customers', <CustomerDetail />)} />
               <Route path="compliance/*" element={guard('compliance', <Compliance />)} />
-              <Route path="treasury" element={guard('treasury', <Treasury />)} />
+              <Route path="treasury/*" element={guard('treasury', <Treasury />)} />
               <Route path="reports" element={guard('reports', <Reports />)} />
               <Route path="settings/*" element={guard('settings', <Settings />)} />
               <Route path="*" element={<Navigate to="/portal" replace />} />

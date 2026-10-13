@@ -110,7 +110,9 @@ function seedTenant(db, t, nCustomers, nTx, specials) {
 
 export function buildSeed() {
   return withSeed('coremit-demo-v1', () => {
-    const db = { version: 1, tenants: [], customers: [], recipients: [], transactions: [], payIns: [], cases: [], sars: [], audit: [], invites: [], counters: {} }
+    const db = { version: 2, tenants: [], customers: [], recipients: [], transactions: [], payIns: [], cases: [], sars: [], audit: [], invites: [], counters: {}, journals: [], customPartners: [], integrationRequests: [] }
+    const lagos = { id: 'custom_lagos', name: 'Lagos Settle (custom)', cur: ['NGN', 'GHS'], methods: ['Bank', 'Mobile wallet'], included: false, tenantId: 'sahara', status: 'live' }
+    db.customPartners.push(lagos)
     const ng = E.makeTenant({
       id: 'northgate', name: 'Northgate Remit', legalName: 'Northgate Remit Ltd', short: 'NGR', slug: 'northgate', domain: 'send.northgateremit.co.uk', status: 'live',
       frn: '900123', mlr: 'XBML00000123456', email: 'owner@northgateremit.co.uk', plan: 'Growth', createdAt: now() - 60 * DAY, liveAt: now() - 58 * DAY, setupSeconds: 588,
@@ -121,7 +123,9 @@ export function buildSeed() {
         { cur: 'BDT', enabled: true, fee: 1.99, margin: 1.3, min: 10, max: 10000 },
         { cur: 'NGN', enabled: true, fee: 3.49, margin: 1.5, min: 10, max: 8000 },
       ],
-      partners: ['p1', 'p2', 'p4', 'p3'],
+      partners: ['daytona'],
+      integrations: { kyc: { provider: 'didit', status: 'connected' }, payin: ['clearbank', 'revolut'] },
+      declaration: { accepted: true, by: 'owner@northgateremit.co.uk', at: now() - 60 * DAY },
       compliance: { mlro: 'Amina Yusuf', autoRelease: { enabled: true, maxAmount: 2000 } },
       staff: [
         { id: uid('stf'), name: 'Owner', email: 'owner@northgateremit.co.uk', role: 'Admin' },
@@ -130,8 +134,8 @@ export function buildSeed() {
         { id: uid('stf'), name: 'Sana Mirza', email: 'sana@northgateremit.co.uk', role: 'Cashier' },
         { id: uid('stf'), name: 'Ilford Agent 03', email: 'agent03@northgateremit.co.uk', role: 'Agent' },
       ],
-      treasury: { p1: 900000, p2: 900000, p4: 900000, p3: 900000 },
-      checks: { ch: true, fca: true, mlr: true, dir: true, ubo: true, bank: true },
+      treasury: { daytona: 3000000 },
+      checks: { contract: true, reg: true, kyc: true, payout: true, prefund: true, domain: true },
     })
     const sh = E.makeTenant({
       id: 'sahara', name: 'Sahara Exchange', legalName: 'Sahara Exchange UK Ltd', short: 'SHX', slug: 'sahara', domain: 'app.saharaexchange.com', status: 'live',
@@ -142,22 +146,34 @@ export function buildSeed() {
         { cur: 'GHS', enabled: true, fee: 1.99, margin: 1.6, min: 10, max: 8000 },
         { cur: 'KES', enabled: true, fee: 2.49, margin: 1.5, min: 10, max: 8000 },
       ],
-      partners: ['p3', 'p6'], compliance: { mlro: 'Kofi Asante' },
+      partners: ['daytona', 'custom_lagos'], integrations: { kyc: { provider: 'shufti', status: 'connected' }, payin: ['embank'] }, declaration: { accepted: true, by: 'ops@saharaexchange.com', at: now() - 41 * DAY }, compliance: { mlro: 'Kofi Asante' },
       staff: [{ id: uid('stf'), name: 'Owner', email: 'ops@saharaexchange.com', role: 'Admin' }, { id: uid('stf'), name: 'Kofi Asante', email: '', role: 'MLRO' }, { id: uid('stf'), name: 'Efua Boateng', email: '', role: 'Compliance officer' }],
-      treasury: { p3: 900000, p6: 900000 }, checks: { ch: true, fca: true, mlr: true, dir: true, ubo: true, bank: true },
+      treasury: { daytona: 1500000, custom_lagos: 1500000 }, checks: { contract: true, reg: true, kyc: true, payout: true, prefund: true, domain: true },
     })
     const ks = E.makeTenant({
       id: 'kestrel', name: 'Kestrel Pay', legalName: 'Kestrel Pay Ltd', short: 'KSP', slug: 'kestrel', status: 'review', frn: '903412', mlr: 'XBML00000318822', email: 'hello@kestrelpay.co.uk',
       createdAt: now() - 3 * 3600000, setupSeconds: 700, brand: { color: '#24409E', accent: '#53C4B0', appName: 'Kestrel Pay' },
-      corridors: ['PHP', 'INR'], partners: ['p5', 'p2'], compliance: { mlro: 'Lea Bautista' }, treasury: { p5: 0, p2: 0 },
-      checks: { ch: true, fca: true, mlr: true },
+      corridors: ['PHP', 'INR'], partners: ['daytona'], integrations: { kyc: { provider: 'custom', status: 'requested' }, payin: ['clearbank'] }, declaration: { accepted: true, by: 'hello@kestrelpay.co.uk', at: now() - 3 * 3600000 }, compliance: { mlro: 'Lea Bautista' }, treasury: { daytona: 0 },
+      checks: { reg: true, payout: true, domain: true },
     })
+    sh.accounts.find((a) => a.id === 'prefund_custom_lagos').name = 'Prefund — Lagos Settle (custom)'
+    for (const t of [ng, sh, ks]) t.accounts.push({ id: 'eq_open', name: 'Opening balance equity', type: 'liability', cur: 'GBP' })
     db.tenants.push(ng, sh, ks)
     seedTenant(db, ng, 22, 120, true)
     seedTenant(db, sh, 10, 45, false)
-    // Closing prefunding balances after the seeded month (NGN deliberately low to show the warning)
-    ng.treasury = { p1: 48250, p2: 31400, p4: 22800, p3: 3150 }
-    sh.treasury = { p3: 27600, p6: 11900 }
+    // Opening balances + a few manual ledger entries so the books look real
+    const open = (t, lines, details, at) => E.post(db, t.id, { type: 'OPEN', details, by: 'Opening balance', at, lines })
+    open(ng, [{ account: 'bank_clearbank', debit: 120000 }, { account: 'bank_revolut', debit: 18000 }, { account: 'prefund_daytona', debit: 90000 }, { account: 'eq_open', credit: 228000 }], 'Opening balances', now() - 33 * DAY)
+    open(sh, [{ account: 'bank_embank', debit: 60000 }, { account: 'prefund_daytona', debit: 40000 }, { account: 'prefund_custom_lagos', debit: 12000 }, { account: 'eq_open', credit: 112000 }], 'Opening balances', now() - 33 * DAY)
+    E.addExpense(db, ng.id, { amount: 5000, details: 'To Cloud tech ltd', expenseAccount: 'exp_it', paidFrom: 'bank_revolut', date: now() - 10 * DAY }, 'Owner', now() - 8 * DAY)
+    E.addExpense(db, ng.id, { amount: 72.72, details: 'LinkedIn *080344264', expenseAccount: 'exp_it', paidFrom: 'bank_revolut', date: now() - 11 * DAY }, 'Owner', now() - 8 * DAY)
+    E.addExpense(db, ng.id, { amount: 151.18, details: 'Ionos Cloud Ltd', expenseAccount: 'exp_it', paidFrom: 'bank_revolut', date: now() - 12 * DAY }, 'Owner', now() - 8 * DAY)
+    E.transferFunds(db, ng.id, { from: 'bank_clearbank', to: 'bank_revolut', amount: 10000, details: 'Move operating float' }, 'Owner', now() - 9 * DAY)
+    E.topUp(db, ng.id, 'daytona', 40000, 'Owner', now() - 6 * DAY, 'bank_clearbank')
+    // Prefund balances come from the ledger
+    for (const t of [ng, sh]) for (const pid of t.partners) t.treasury[pid] = E.balance(db, t, `prefund_${pid}`)
+    db.integrationRequests.unshift({ id: 'req_kestrel_kyc', tenantId: 'kestrel', kind: 'kyc', name: 'Onfido', notes: 'We already have a contract with Onfido and want to keep it.', cur: [], status: 'requested', quote: null, createdAt: now() - 3 * 3600000, by: 'hello@kestrelpay.co.uk' })
+    db.integrationRequests.unshift({ id: 'req_sahara_payin', tenantId: 'sahara', kind: 'payin', name: 'Tide Business', notes: 'Second operating account.', cur: [], status: 'quoted', quote: { setup: 2500, monthly: 150, weeks: 3, note: 'API available; 3 weeks.' }, createdAt: now() - 9 * DAY, by: 'ops@saharaexchange.com' })
     db.invites.push({ token: 'bmx7q2ka', label: 'Barking Money Express', createdAt: now() - 2 * DAY, expiresAt: now() + 5 * DAY, usedBy: null, createdBy: 'Zaland Shah' })
     E.audit(db, { tenantId: 'kestrel', actor: 'hello@kestrelpay.co.uk', action: 'Completed onboarding in 11m 40s', target: 'Kestrel Pay', at: now() - 3 * 3600000 })
     db.audit.sort((a, b) => b.at - a.at)
