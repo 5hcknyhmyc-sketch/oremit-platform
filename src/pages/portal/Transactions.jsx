@@ -123,7 +123,7 @@ export function TxDrawer({ id, onClose }) {
 }
 
 function NewTransfer({ onClose }) {
-  const { db, t, actor } = usePortal()
+  const { db, t, actor, agentId } = usePortal()
   const nav = useNavigate()
   const custs = db.customers.filter((c) => c.tenantId === t.id && c.status === 'active')
   const [f, setF] = useState({ customerId: '', recipientId: '', sendAmount: '', purpose: PURPOSES[0], sof: '', pay: true })
@@ -133,14 +133,14 @@ function NewTransfer({ onClose }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const submit = () => {
     const tx = act((d) => {
-      const tx = E.createTransaction(d, { tenantId: t.id, customerId: f.customerId, recipientId: f.recipientId, sendAmount: +f.sendAmount, purpose: f.purpose, sof: f.sof, channel: 'Branch', fraudConfirm: true }, actor)
+      const tx = E.createTransaction(d, { tenantId: t.id, customerId: f.customerId, recipientId: f.recipientId, sendAmount: +f.sendAmount, purpose: f.purpose, sof: f.sof, channel: agentId ? 'Agent' : 'Branch', agentId, fraudConfirm: true }, actor)
       if (f.pay) E.recordPayIn(d, t.id, { amount: tx.total, payer: custs.find((c) => c.id === f.customerId).name.toUpperCase(), reference: tx.ref, method: 'Cash at branch' }, actor)
       return tx
     }, (tx) => `Transfer ${tx.ref} created`)
     if (tx) { onClose(); nav(`/portal/transactions/${tx.id}`) }
   }
   return (
-    <Modal title="New transfer (branch)" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn pri" onClick={submit} disabled={!q}>Create transfer</button></>}>
+    <Modal title={agentId ? "New transfer (agent)" : "New transfer (branch)"} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn pri" onClick={submit} disabled={!q}>Create transfer</button></>}>
       <Field label="Customer" id="nt-c"><select id="nt-c" className="sel" value={f.customerId} onChange={(e) => setF({ ...f, customerId: e.target.value, recipientId: '' })}><option value="">Choose…</option>{custs.map((c) => <option key={c.id} value={c.id}>{c.name} · KYC {c.kyc.status.replace('_', ' ')}</option>)}</select></Field>
       <Field label="Recipient" id="nt-r"><select id="nt-r" className="sel" value={f.recipientId} onChange={set('recipientId')} disabled={!f.customerId}><option value="">Choose…</option>{recs.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.cur} · {r.method}</option>)}</select></Field>
       <div className="form">

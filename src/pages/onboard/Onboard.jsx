@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useStore, act } from '../../store'
-import { Panel, Field, Pill } from '../../components/ui'
+import { Panel, Field, Pill, Wordmark } from '../../components/ui'
 import { AppPreview } from '../app/CustomerApp'
 import * as E from '../../lib/engine'
-import { CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS } from '../../lib/reference'
+import { CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, PLATFORM } from '../../lib/reference'
 import { gbp2, num, inkOn } from '../../lib/util'
 
 const STEPS = ['Business', 'Brand', 'Corridors & fees', 'Integrations', 'Compliance', 'Domain & launch']
@@ -151,4 +151,4 @@ export default function Onboard() {
   )
 }
 
-const Shell = ({ children }) => <div style={{ minHeight: '100vh' }}><header className="pbar"><span className="wordmark">Co<i>R</i>emit<small>by TheFXSoft</small></span><span className="chip-dark">MSB onboarding</span></header>{children}</div>
+const Shell = ({ children }) => <div style={{ minHeight: '100vh' }}><header className="pbar"><Wordmark /><span className="chip-dark">MSB onboarding</span></header>{children}</div>

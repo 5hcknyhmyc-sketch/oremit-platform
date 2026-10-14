@@ -7,7 +7,7 @@ import { TxTable } from './Transactions'
 import { act } from '../../store'
 import * as E from '../../lib/engine'
 import { riskLevel } from '../../lib/rules'
-import { DOC_TYPES, OCCUPATIONS, CURRENCIES } from '../../lib/reference'
+import { DOC_TYPES, OCCUPATIONS, CURRENCIES, RELATIONSHIPS } from '../../lib/reference'
 import { gbp, fmtDate, ageFrom, initials } from '../../lib/util'
 
 export default function Customers() {
@@ -147,7 +147,7 @@ export function NewRecipient({ c, onClose, actor: actorOverride }) {
         <Field label="Payout method" id="nr-m"><select id="nr-m" className="sel" value={f.method} onChange={set('method')}><option>Bank</option><option>Cash pickup</option><option>Mobile wallet</option></select></Field>
         <Field label="Bank / wallet provider" id="nr-b"><input id="nr-b" className="inp" value={f.bank} onChange={set('bank')} /></Field>
         <Field label="Account / IBAN / wallet number" id="nr-a"><input id="nr-a" className="inp mono" value={f.account} onChange={set('account')} /></Field>
-        <Field label="Relationship" id="nr-r"><select id="nr-r" className="sel" value={f.relationship} onChange={set('relationship')}>{['Parent', 'Spouse', 'Sibling', 'Child', 'Cousin', 'Friend', 'Supplier', 'Other'].map((o) => <option key={o}>{o}</option>)}</select></Field>
+        <Field label="Relationship" id="nr-r"><select id="nr-r" className="sel" value={f.relationship} onChange={set('relationship')}>{RELATIONSHIPS.map((o) => <option key={o}>{o}</option>)}</select></Field>
       </div>
     </Modal>
   )

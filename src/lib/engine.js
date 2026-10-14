@@ -1,13 +1,13 @@
 // The platform engine. Every operation takes the database object `db` and mutates it.
 // In production each op maps to an API endpoint / database transaction (see docs/ARCHITECTURE.md).
-import { CURRENCIES, PARTNERS, partnerFor, partnerById, KYC_PROVIDERS, PAYIN_BANKS, DEFAULT_ROLES } from './reference'
+import { CURRENCIES, PARTNERS, partnerFor, partnerById, KYC_PROVIDERS, PAYIN_BANKS, DEFAULT_ROLES, ID_DOC_TYPES, planById } from './reference'
 import { evaluate, decide, topSeverity, defaultRules } from './rules'
 import { screenName } from './screening'
 import { defaultPolicies } from './policies'
 import { uid, shortCode, now, DAY, ageFrom, initials } from './util'
 
 export class OpError extends Error {}
-const fail = (m) => { throw new OpError(m) }
+export const fail = (m) => { throw new OpError(m) }
 
 /* ---------------- Audit ---------------- */
 export function audit(db, { tenantId = null, actor = 'System', action, target = '', at = now() }) {
@@ -36,6 +36,11 @@ export function makeTenant(o) {
     },
     bank: o.bank || { name: `${o.legalName || o.name} — client account`, sortCode: '04-00-75', account: String(10000000 + Math.floor(Math.random() * 89999999)) },
     roles: o.roles || JSON.parse(JSON.stringify(DEFAULT_ROLES)),
+    modules: o.modules || [...planById(o.plan || 'Starter').modules],
+    agents: o.agents || [], branches: o.branches || [{ id: 'main', name: 'Head office' }],
+    rewards: { enabled: false, pointsPerPound: 1, referralBonus: 10, redeemRate: 100, ...(o.rewards || {}) },
+    apiKeys: o.apiKeys || [], webhooks: o.webhooks || [],
+    bureau: o.bureau || { idThreshold: 5000, linkedHours: 24, spreadPct: 3, board: {}, stock: {} },
     staff: o.staff || [{ id: uid('stf'), name: 'Owner', email: o.email || '', role: 'Admin' }],
     treasury: o.treasury || Object.fromEntries((o.partners || []).map((p) => [p, 0])),
     topUps: [],
@@ -204,7 +209,7 @@ export function createCustomer(db, tenantId, d, actor = 'Customer', at = now()) 
   const c = {
     id: uid('cus'), tenantId, type: d.type || 'individual', name: d.name.trim(), email: d.email || '', phone: d.phone || '',
     dob: d.dob || '', address: d.address || '', postcode: d.postcode || '', occupation: d.occupation || '', nationality: d.nationality || '',
-    createdAt: at, status: 'active', pep: !!sc.pep, pepDetail: sc.pep,
+    createdAt: at, status: 'active', pep: !!sc.pep, pepDetail: sc.pep, company: d.company || null, agentId: d.agentId || null, referredBy: d.referredBy || null, points: 0,
     kyc: { status: 'not_started', docs: [] }, screening: sc, risk: { override: null },
   }
   db.customers.push(c)
@@ -228,7 +233,7 @@ export function reviewDocument(db, customerId, docId, ok, actor, at = now()) {
   const d = c.kyc.docs.find((x) => x.id === docId) || fail('Document not found')
   d.status = ok ? 'verified' : 'rejected'
   d.reviewedBy = actor
-  const idOk = c.kyc.docs.some((x) => x.status === 'verified' && ['Passport', 'UK driving licence', 'National ID card'].includes(x.type))
+  const idOk = c.kyc.docs.some((x) => x.status === 'verified' && ID_DOC_TYPES.includes(x.type))
   c.kyc.status = idOk ? 'verified' : c.kyc.docs.some((x) => x.status === 'pending') ? 'pending' : 'rejected'
   if (idOk) c.kyc.verifiedAt = at
   computeRisk(db, c)
@@ -299,11 +304,15 @@ export function createTransaction(db, d, actor = 'Customer', at = now()) {
   const today = db.transactions.filter((x) => x.customerId === c.id && new Date(x.createdAt).toDateString() === new Date(at).toDateString() && !['cancelled', 'rejected', 'refunded'].includes(x.status)).reduce((a, x) => a + x.sendAmount, 0)
   if (today + q.sendAmount > t.compliance.dailyLimit) fail(`This would take today's total over the £${t.compliance.dailyLimit.toLocaleString('en-GB')} daily limit.`)
   if (!q.partner) fail(`No payout partner is switched on for ${r.cur}.`)
+  if (c.type === 'business' && c.company?.monthlyLimit) {
+    const month = db.transactions.filter((x) => x.customerId === c.id && new Date(x.createdAt).getMonth() === new Date(at).getMonth() && !['cancelled', 'rejected', 'refunded'].includes(x.status)).reduce((a, x) => a + x.sendAmount, 0)
+    if (month + q.sendAmount > c.company.monthlyLimit) fail(`This would exceed ${c.name}'s contract limit of £${c.company.monthlyLimit.toLocaleString('en-GB')} this month.`)
+  }
   const tx = {
     id: uid('txn'), ref: `${t.short}-${shortCode(6)}`, tenantId: t.id, customerId: c.id, recipientId: r.id,
     sendAmount: q.sendAmount, fee: q.fee, total: q.total, cur: r.cur, rate: q.rate, receiveAmount: q.receiveAmount,
     partnerId: q.partner.id, method: r.method, purpose: d.purpose || '', sof: d.sof || '', channel: d.channel || 'App',
-    fraudConfirm: !!d.fraudConfirm, status: 'awaiting_funds', createdAt: at, updatedAt: at,
+    fraudConfirm: !!d.fraudConfirm, agentId: d.agentId || c.agentId || null, status: 'awaiting_funds', createdAt: at, updatedAt: at,
     history: [{ at, status: 'awaiting_funds', note: `Created via ${d.channel || 'App'}`, actor }], hits: [], caseId: null, payInId: null,
   }
   db.transactions.unshift(tx)
@@ -522,6 +531,9 @@ export function completePayout(db, txnId, at = now()) {
   const tx = db.transactions.find((x) => x.id === txnId)
   if (!tx || tx.status !== 'released') return
   step(tx, 'paid', `${tx.receiveAmount.toLocaleString('en-GB')} ${tx.cur} paid out (${tx.method})`, partnerById(db, tx.partnerId)?.name || 'Partner', at)
+  const t = tenantOf(db, tx.tenantId), c = db.customers.find((x) => x.id === tx.customerId)
+  if (t.rewards.enabled && c) c.points = (c.points || 0) + Math.floor(tx.sendAmount * t.rewards.pointsPerPound)
+  if (tx.agentId) { const a = t.agents.find((x) => x.id === tx.agentId); if (a) { a.commissionDue = +((a.commissionDue || 0) + tx.fee * (a.commissionPct / 100)).toFixed(2) } }
 }
 
 export function cancelTransaction(db, txnId, actor, at = now()) {

@@ -5,7 +5,8 @@ import { usePortal } from './PortalApp'
 import { Panel, PageHead, Tabs, Field, Toggle, Modal, Pill } from '../../components/ui'
 import { act, useStore } from '../../store'
 import * as E from '../../lib/engine'
-import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf } from '../../lib/reference'
+import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS } from '../../lib/reference'
+import * as M from '../../lib/modules'
 import { AppPreview } from '../app/CustomerApp'
 import { uid, fmtDate } from '../../lib/util'
 
@@ -15,12 +16,13 @@ export default function Settings() {
   return (
     <>
       <PageHead title="Settings" sub="Brand, corridors, team, domain and business details." />
-      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
+      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/modules', label: 'Modules' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
       <Routes>
         <Route index element={<Branding />} />
         <Route path="corridors" element={<Corridors />} />
         <Route path="integrations" element={<Integrations />} />
         <Route path="team" element={<Team />} />
+        <Route path="modules" element={<Modules />} />
         <Route path="domain" element={<Domain />} />
         <Route path="business" element={<Business />} />
       </Routes>
@@ -124,27 +126,47 @@ function RequestModal({ kind, onClose }) {
 function Team() {
   const { t, actor, role } = usePortal()
   const [inv, setInv] = useState(false)
+  const [edit, setEdit] = useState(null) // { name, modules, rename }
   const [f, setF] = useState({ name: '', email: '', role: 'Cashier' })
   const roles = Object.keys(t.roles)
-  const toggle = (r, m) => saveTenant(t, actor, (tt) => { const l = tt.roles[r]; const i = l.indexOf(m); i >= 0 ? l.splice(i, 1) : l.push(m) }, null, `Changed ${r} permissions`)
+  const mods = MODULES.filter((m) => t.modules.includes(m.id))
   const invite = () => { if (!f.name.trim() || !f.email.trim()) return useStore.getState().notify('Name and email are required', 'err'); saveTenant(t, actor, (tt) => tt.staff.push({ id: uid('stf'), ...f }), `Invite sent to ${f.email}`, `Invited ${f.name} as ${f.role}`); setInv(false) }
   const remove = (s) => saveTenant(t, actor, (tt) => { tt.staff = tt.staff.filter((x) => x.id !== s.id) }, 'Removed', `Removed ${s.name}`)
+  const changeRole = (s, r) => saveTenant(t, actor, (tt) => { tt.staff.find((x) => x.id === s.id).role = r }, 'Role updated', `Changed ${s.name} to ${r}`)
+  const saveRole = () => act((d) => M.saveRole(d, t.id, edit.name, edit.modules, actor, edit.rename), 'Role saved') && setEdit(null)
   return (
     <div className="stack">
-      <Panel title="Roles & permissions" actions={<span className="muted small">What each role can open. Admin always has everything.</span>}>
-        <div className="tbl-wrap"><table className="matrix"><thead><tr><th>Role</th>{MODULES.map((m) => <th key={m.id} style={{ textAlign: 'center' }}>{m.label}</th>)}</tr></thead>
-          <tbody>{roles.map((r) => <tr key={r}><td><b>{r}</b>{r === 'MLRO' && <br />}{r === 'MLRO' && <small className="muted">decides SARs & blocking releases</small>}</td>{MODULES.map((m) => <td key={m.id} style={{ textAlign: 'center' }}><Toggle on={t.roles[r].includes(m.id)} disabled={r === 'Admin' || role !== 'Admin'} onChange={() => toggle(r, m.id)} label={`${r}: ${m.label}`} /></td>)}</tr>)}</tbody>
+      <Panel title="Roles & permissions" actions={role === 'Admin' && <button className="btn sm pri" onClick={() => setEdit({ name: '', modules: ['dashboard', 'transactions'], rename: null })}><Plus />New role</button>}>
+        <div className="tbl-wrap"><table><thead><tr><th>Role</th>{mods.map((m) => <th key={m.id} style={{ textAlign: 'center' }}>{m.label}</th>)}<th></th></tr></thead>
+          <tbody>{roles.map((r) => <tr key={r}><td><b>{r}</b>{['MLRO', 'Admin'].includes(r) && <><br /><small className="muted">{r === 'Admin' ? 'everything, always' : 'decides SARs & blocking releases'}</small></>}</td>{mods.map((m) => <td key={m.id} style={{ textAlign: 'center' }}>{M.roleModules(t, r).includes(m.id) ? <Pill tone="good">on</Pill> : <span className="muted">—</span>}</td>)}<td className="r">{role === 'Admin' && r !== 'Admin' && <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn sm" onClick={() => setEdit({ name: r, modules: [...t.roles[r]], rename: r })}>Edit</button><button className="btn sm ghost" onClick={() => act((d) => M.deleteRole(d, t.id, r, actor), 'Role deleted')}>Delete</button></div>}</td></tr>)}</tbody>
         </table></div>
       </Panel>
       <Panel title={`Staff (${t.staff.length})`} actions={role === 'Admin' && <button className="btn sm pri" onClick={() => setInv(true)}><Plus />Invite</button>}>
         <div className="tbl-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>2FA</th><th></th></tr></thead>
-          <tbody>{t.staff.map((s) => <tr key={s.id}><td><b>{s.name}</b></td><td className="muted">{s.email || '—'}</td><td>{s.role}</td><td><Pill tone="good">On</Pill></td><td className="r">{role === 'Admin' && s.role !== 'Admin' && <button className="btn sm ghost" onClick={() => remove(s)}>Remove</button>}</td></tr>)}</tbody>
+          <tbody>{t.staff.map((s) => <tr key={s.id}><td><b>{s.name}</b>{s.agentId && <span className="tag" style={{ marginLeft: 6 }}>agent</span>}</td><td className="muted">{s.email || '—'}</td><td>{role === 'Admin' && s.role !== 'Admin' ? <select className="sel" value={s.role} onChange={(e) => changeRole(s, e.target.value)} aria-label={`Role for ${s.name}`}>{roles.map((r) => <option key={r}>{r}</option>)}</select> : s.role}</td><td><Pill tone="good">On</Pill></td><td className="r">{role === 'Admin' && s.role !== 'Admin' && <button className="btn sm ghost" onClick={() => remove(s)}>Remove</button>}</td></tr>)}</tbody>
         </table></div>
       </Panel>
       {inv && <Modal title="Invite a staff member" onClose={() => setInv(false)} footer={<><button className="btn" onClick={() => setInv(false)}>Cancel</button><button className="btn pri" onClick={invite}>Send invite</button></>}>
         <div className="form"><Field label="Name" id="in-n"><input id="in-n" className="inp" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field><Field label="Email" id="in-e"><input id="in-e" className="inp" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field><Field label="Role" id="in-r"><select id="in-r" className="sel" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{roles.map((r) => <option key={r}>{r}</option>)}</select></Field></div>
       </Modal>}
+      {edit && <Modal title={edit.rename ? `Edit role: ${edit.rename}` : 'New role'} onClose={() => setEdit(null)} footer={<><button className="btn" onClick={() => setEdit(null)}>Cancel</button><button className="btn pri" onClick={saveRole}><Save />Save role</button></>}>
+        <Field label="Role name" id="rl-n"><input id="rl-n" className="inp" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+        <Field label="Can open"><div className="checks">{mods.map((m) => <label key={m.id} className="check"><input type="checkbox" checked={edit.modules.includes(m.id)} onChange={(e) => setEdit({ ...edit, modules: e.target.checked ? [...edit.modules, m.id] : edit.modules.filter((x) => x !== m.id) })} /><span>{m.label}</span></label>)}</div></Field>
+      </Modal>}
     </div>
+  )
+}
+
+function Modules() {
+  const { t, actor, role } = usePortal()
+  const plan = PLANS.find((p) => p.id === t.plan)
+  const toggle = (m) => act((d) => M.setTenantModules(d, t.id, t.modules.includes(m.id) ? t.modules.filter((x) => x !== m.id) : [...t.modules, m.id], actor), null)
+  return (
+    <Panel title="Modules" actions={<span className="muted small">Plan: <b>{t.plan}</b></span>}>
+      <div className="list">{MODULES.map((m) => { const inPlan = plan?.modules.includes(m.id); const on = t.modules.includes(m.id); return (
+        <div className="li" key={m.id}><div className="grow"><b>{m.label}{m.core && <span className="tag" style={{ marginLeft: 6 }}>core</span>}</b><small>{m.desc || 'Always on'}{!inPlan && !m.core ? ' · not in your plan — ask TheFXSoft to upgrade' : ''}</small></div>
+          <Toggle on={on} disabled={m.core || !inPlan || role !== 'Admin'} onChange={() => toggle(m)} label={m.label} /></div>) })}</div>
+    </Panel>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Building2, Smartphone, Link2 } from 'lucide-react'
 import { useStore, act } from '../store'
+import { Wordmark } from '../components/ui'
 import { createInvite } from '../lib/engine'
 import { Logo } from '../components/ui'
 
@@ -15,7 +16,7 @@ export default function Login() {
 
   return (
     <div style={{ minHeight: '100vh' }}>
-      <header className="pbar"><span className="wordmark">Co<i>R</i>emit<small>by TheFXSoft</small></span><span className="chip-dark">Demo environment</span></header>
+      <header className="pbar"><Wordmark /><span className="chip-dark">Demo environment</span></header>
       <main className="login">
         <div className="stack-s">
           <h1>Sign in to the demo</h1>
@@ -40,7 +41,7 @@ export default function Login() {
           <section className="stack-s" key={t.id}>
             <div className="row"><Logo t={t} size="sm" /><h2 style={{ fontSize: 16 }}>{t.name}</h2><span className="muted small mono">{t.slug}.coremit.app</span></div>
             <div className="personas">
-              {t.staff.filter((s) => s.role !== 'Agent').map((s) => (
+              {t.staff.map((s) => (
                 <button key={s.id} className="persona" onClick={() => asStaff(t, s)}>
                   <div className="row"><Building2 size={20} /><b>{s.name}</b></div>
                   <small>{s.role} · MSB {s.role === 'Admin' ? 'owner portal' : 'staff portal'}</small>

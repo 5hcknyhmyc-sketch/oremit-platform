@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink, Navigate, Link, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Building2, CheckCircle2, Globe2, Receipt, ScrollText, Plus, Copy, ExternalLink, Plug } from 'lucide-react'
+import { LayoutDashboard, Building2, CheckCircle2, Globe2, Receipt, ScrollText, Plus, Copy, ExternalLink, Plug, SlidersHorizontal } from 'lucide-react'
 import { useStore, act } from '../../store'
 import TopBar from '../../components/TopBar'
-import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal, Field } from '../../components/ui'
+import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal, Field, Toggle } from '../../components/ui'
 import * as E from '../../lib/engine'
-import { PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf } from '../../lib/reference'
+import { PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM, MODULES } from '../../lib/reference'
+import * as M from '../../lib/modules'
+import PlatformSettings from './PlatformSettings'
 import { gbp, gbp2, fmtDate, DAY, ago } from '../../lib/util'
 
-const NAV = [['/admin', 'Overview', LayoutDashboard, true], ['/admin/msbs', 'MSBs', Building2], ['/admin/approvals', 'Approvals', CheckCircle2], ['/admin/integrations', 'Integration requests', Plug], ['/admin/network', 'Integrations catalogue', Globe2], ['/admin/billing', 'Billing', Receipt], ['/admin/audit', 'Audit log', ScrollText]]
+const NAV = [['/admin', 'Overview', LayoutDashboard, true], ['/admin/msbs', 'MSBs', Building2], ['/admin/approvals', 'Approvals', CheckCircle2], ['/admin/integrations', 'Integration requests', Plug], ['/admin/network', 'Integrations catalogue', Globe2], ['/admin/billing', 'Billing', Receipt], ['/admin/platform', 'Platform settings', SlidersHorizontal], ['/admin/audit', 'Audit log', ScrollText]]
 
 export default function AdminApp() {
   const session = useStore((s) => s.session)
@@ -21,7 +23,7 @@ export default function AdminApp() {
       <TopBar label="Super Admin · TheFXSoft" />
       <div className="shell">
         <aside className="side">
-          <div className="tenant-id"><div className="logo" style={{ '--brand': 'var(--chrome)', '--brand-ink': '#fff' }}>FX</div><div><b>TheFXSoft</b><span>admin.coremit.app</span></div></div>
+          <div className="tenant-id"><div className="logo" style={{ '--brand': 'var(--chrome)', '--brand-ink': '#fff' }}>{PLATFORM.owner.slice(0, 2).toUpperCase()}</div><div><b>{PLATFORM.owner}</b><span>admin.{PLATFORM.domain}</span></div></div>
           <nav className="nav">{NAV.map(([to, l, I, end]) => <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : '')}><I />{l}{l === 'Approvals' && review ? <span className="count">{review}</span> : null}{l === 'Integration requests' && reqs ? <span className="count">{reqs}</span> : null}</NavLink>)}</nav>
           <div className="side-foot"><span>Signed in as <b>Zaland Shah</b></span><span>Owner</span></div>
         </aside>
@@ -34,6 +36,7 @@ export default function AdminApp() {
             <Route path="integrations" element={<Requests />} />
             <Route path="billing" element={<Billing />} />
             <Route path="audit" element={<Audit />} />
+            <Route path="platform/*" element={<PlatformSettings />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </main>
@@ -103,6 +106,7 @@ function Overview() {
 function Msbs() {
   const db = useStore((s) => s.db)
   const imp = useImpersonate()
+  const [mods, setMods] = useState(null)
   const rows = [...db.tenants.map((t) => ({ t })), ...db.invites.filter((i) => !i.usedBy).map((i) => ({ inv: i }))]
   return (
     <>
@@ -117,6 +121,7 @@ function Msbs() {
               <td><div className="row" style={{ justifyContent: 'flex-end' }}>
                 {t.status === 'review' && <Link className="btn sm pri" to="/admin/approvals">Review</Link>}
                 <button className="btn sm" onClick={() => imp(t)}>Open admin</button>
+                <button className="btn sm" onClick={() => setMods(t)}>Modules</button>
                 <Link className="btn sm" to={`/app/${t.slug}`}>View app</Link>
                 {t.status === 'live' && <button className="btn sm danger" onClick={() => act((d) => E.setTenantStatus(d, t.id, 'suspended', 'Zaland Shah'), `${t.name} suspended`)}>Suspend</button>}
                 {t.status === 'suspended' && <button className="btn sm" onClick={() => act((d) => E.setTenantStatus(d, t.id, 'live', 'Zaland Shah'), `${t.name} reactivated`)}>Reactivate</button>}
@@ -127,6 +132,11 @@ function Msbs() {
           ))}</tbody>
         </table></div>
       </Panel>
+      {mods && (() => { const t = db.tenants.find((x) => x.id === mods.id); const plan = PLANS.find((x) => x.id === t.plan); return (
+        <Modal title={`Modules for ${t.name}`} onClose={() => setMods(null)}>
+          <p className="muted small">Plan <b>{t.plan}</b>. Modules outside the plan can still be switched on here as an add-on.</p>
+          <div className="list">{MODULES.filter((m) => !m.core).map((m) => <div className="li" key={m.id}><div className="grow"><b>{m.label}</b><small>{m.desc}{plan?.modules.includes(m.id) ? ' · in plan' : ' · add-on'}</small></div><Toggle on={t.modules.includes(m.id)} onChange={() => act((d) => M.setTenantModules(d, t.id, t.modules.includes(m.id) ? t.modules.filter((x) => x !== m.id) : [...t.modules, m.id], 'Zaland Shah'))} label={m.label} /></div>)}</div>
+        </Modal>) })()}
     </>
   )
 }
@@ -197,12 +207,11 @@ function Requests() {
 
 function Billing() {
   const db = useStore((s) => s.db)
-  const PLANS = { Starter: [199, 0.4], Growth: [499, 0.25] }
   return (
     <>
-      <PageHead title="Billing" sub="What each MSB pays TheFXSoft. Plans and rates are placeholders." />
+      <PageHead title="Billing" sub={`What each MSB pays ${PLATFORM.owner}. Plans are defined under Platform settings.`} />
       <Panel><div className="tbl-wrap"><table><thead><tr><th>MSB</th><th>Plan</th><th className="r">Monthly fee</th><th className="r">Per paid transfer</th><th className="r">Transfers, 30d</th><th className="r">Due this month</th><th>Status</th></tr></thead>
-        <tbody>{db.tenants.map((t) => { const [fee, per] = PLANS[t.plan] || [0, 0]; const n = db.transactions.filter((x) => x.tenantId === t.id && x.status === 'paid' && Date.now() - x.createdAt < 30 * DAY).length; return <tr key={t.id}><td><div className="cell-t"><Logo t={t} /><b>{t.name}</b></div></td><td>{t.plan}</td><td className="r num">{gbp(fee)}</td><td className="r num">{gbp2(per)}</td><td className="r num">{n}</td><td className="r num"><b>{gbp2(fee + per * n)}</b></td><td>{t.status === 'live' ? <Pill tone="good">Active</Pill> : <Pill tone="mute">Starts at go-live</Pill>}</td></tr> })}</tbody>
+        <tbody>{db.tenants.map((t) => { const pl = PLANS.find((x) => x.id === t.plan) || { monthly: 0, perTx: 0 }; const fee = pl.monthly, per = pl.perTx; const n = db.transactions.filter((x) => x.tenantId === t.id && x.status === 'paid' && Date.now() - x.createdAt < 30 * DAY).length; return <tr key={t.id}><td><div className="cell-t"><Logo t={t} /><b>{t.name}</b></div></td><td><select className="sel" value={t.plan} onChange={(e) => act((d) => M.setTenantPlan(d, t.id, e.target.value, 'Zaland Shah'), 'Plan changed')} aria-label={`Plan for ${t.name}`}>{PLANS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></td><td className="r num">{gbp(fee)}</td><td className="r num">{gbp2(per)}</td><td className="r num">{n}</td><td className="r num"><b>{gbp2(fee + per * n)}</b></td><td>{t.status === 'live' ? <Pill tone="good">Active</Pill> : <Pill tone="mute">Starts at go-live</Pill>}</td></tr> })}</tbody>
       </table></div></Panel>
     </>
   )

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { LogOut, RotateCcw } from 'lucide-react'
+import { Wordmark } from './ui'
 import { useStore } from '../store'
 
 export default function TopBar({ label, children }) {
@@ -8,7 +9,7 @@ export default function TopBar({ label, children }) {
   const reset = useStore((s) => s.reset)
   return (
     <header className="pbar">
-      <span className="wordmark">Co<i>R</i>emit<small>by TheFXSoft</small></span>
+      <Wordmark />
       {label && <span className="chip-dark">{label}</span>}
       <div className="spacer" />
       {children}

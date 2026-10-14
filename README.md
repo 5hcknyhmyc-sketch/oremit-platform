@@ -38,6 +38,19 @@ Double-entry journals per MSB (`db.journals`, `tenant.accounts`): customer payme
 ### Responsibility
 TheFXSoft provides the software and integrations. Each MSB self-declares its FCA/HMRC status at onboarding and is responsible for its own regulatory compliance, including how it configures rules, thresholds and policies. Super Admin approval is a commercial/technical go-live checklist, not a regulatory check.
 
+### Everything is configurable (no hard-coded lists)
+Super Admin → **Platform settings** defines what the software offers: currencies and mid rates (with rate history), payout partners, KYC providers, pay-in banks, plans (fee + modules), the modules themselves, and every drop-down list (purposes, sources of funds, document types, occupations, relationships, methods, channels), plus the platform name/domain. All of it lives in `db.platform`; `src/lib/reference.js` mirrors it so components can keep importing constants.
+
+Per MSB: modules can be switched on/off (plan or add-on), roles are fully custom (create / rename / delete, per-module access), corridors, pricing, integrations, rules, thresholds, risk weights, policies, branding and domain.
+
+### Optional modules
+- **Agents & branches**: agent logins, float accounts in the ledger (issue / collect), commission on fees, per-agent transfer list.
+- **Corporate clients**: business senders with Companies House number, UBOs, monthly contract limit (enforced on every transfer), bulk payment file.
+- **Bureau de change**: rate board (platform mid ± spread, or custom buy/sell), tills and stock per branch, wholesale stock purchases, deals with ID threshold and linked-deal aggregation, name screening, end-of-day count, all posting to the ledger.
+- **Rewards**: points per £ sent, redemption as fee credit, shown in the customer app.
+- **Tracker**: staff lookup plus a public branded tracking page (`/app/<slug>/track`).
+- **Developer**: API keys (shown once), signed webhooks with event selection, per-MSB audit log.
+
 ### Built-in AI
 `netlify/functions/ai.mjs` calls the Anthropic API for: the assistant panel (questions over the MSB's live data), case review, policy drafting, and plain-English → rule. Without a key, the UI falls back to rule-based summaries so the demo still works.
 

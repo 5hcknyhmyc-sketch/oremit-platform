@@ -4,7 +4,8 @@ import { Home, Users, List, User, ChevronLeft, Copy, ShieldCheck } from 'lucide-
 import { useStore, act } from '../../store'
 import { brandVars, TxStatus, Field, Pill, Markdown } from '../../components/ui'
 import * as E from '../../lib/engine'
-import { CURRENCIES, PURPOSES, SOURCES_OF_FUNDS, DOC_TYPES, TX_STATUS } from '../../lib/reference'
+import * as M from '../../lib/modules'
+import { CURRENCIES, PURPOSES, SOURCES_OF_FUNDS, DOC_TYPES, TX_STATUS, RELATIONSHIPS } from '../../lib/reference'
 import { gbp2, num, fmtDate, initials } from '../../lib/util'
 
 /* ---------- Static preview used by Settings → Branding and the onboarding wizard ---------- */
@@ -42,7 +43,9 @@ export default function CustomerApp() {
   return (
     <div className="app-page">
       <div className="app" style={brandVars(t)}>
-        {!c ? <Welcome t={t} /> : (
+        <Routes>
+          <Route path="track" element={<PublicTrack t={t} />} />
+          <Route path="*" element={!c ? <Welcome t={t} /> : (
           <Routes>
             <Route index element={<AppHome t={t} c={c} />} />
             <Route path="send" element={<Send t={t} c={c} />} />
@@ -52,7 +55,8 @@ export default function CustomerApp() {
             <Route path="profile" element={<Profile t={t} c={c} />} />
             <Route path="*" element={<Navigate to={`/app/${slug}`} replace />} />
           </Routes>
-        )}
+        )} />
+        </Routes>
       </div>
     </div>
   )
@@ -219,7 +223,7 @@ function Recipients({ t, c }) {
           <Field label="How they receive it" id="r-m"><select id="r-m" className="sel" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}><option>Bank</option><option>Cash pickup</option><option>Mobile wallet</option></select></Field>
           <Field label="Bank or wallet provider" id="r-b"><input id="r-b" className="inp" value={f.bank} onChange={(e) => setF({ ...f, bank: e.target.value })} /></Field>
           <Field label="Account / IBAN / wallet number" id="r-a"><input id="r-a" className="inp mono" value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })} /></Field>
-          <Field label="Relationship" id="r-r"><select id="r-r" className="sel" value={f.relationship} onChange={(e) => setF({ ...f, relationship: e.target.value })}>{['Parent', 'Spouse', 'Sibling', 'Child', 'Cousin', 'Friend', 'Supplier', 'Other'].map((o) => <option key={o}>{o}</option>)}</select></Field>
+          <Field label="Relationship" id="r-r"><select id="r-r" className="sel" value={f.relationship} onChange={(e) => setF({ ...f, relationship: e.target.value })}>{RELATIONSHIPS.map((o) => <option key={o}>{o}</option>)}</select></Field>
           <button className="app-btn" onClick={save}>Save recipient</button>{recs.length > 0 && <button className="app-btn alt" onClick={() => setAdd(false)}>Cancel</button>}
         </div> : <div className="app-card" style={{ padding: '4px 16px' }}>{recs.map((r) => <div key={r.id} className="app-item"><div className="av">{initials(r.name)}</div><div className="grow"><b>{r.name}</b><small>{CURRENCIES[r.cur].country} · {r.method} · {r.bank} ••••{String(r.account).slice(-4)}</small></div></div>)}</div>}
         {!add && <button className="app-btn" onClick={() => setAdd(true)}>Add recipient</button>}
@@ -268,6 +272,26 @@ function TxDetail({ t, c }) {
   )
 }
 
+function PublicTrack({ t }) {
+  const db = useStore((s) => s.db)
+  const [q, setQ] = useState('')
+  const [res, setRes] = useState(null)
+  const find = () => { const x = db.transactions.find((k) => k.tenantId === t.id && k.ref.toLowerCase() === q.trim().toLowerCase()); setRes(x || false) }
+  return (
+    <>
+      <Top t={t} title="Track a transfer" sub="Enter the reference from your receipt" />
+      <div className="app-body">
+        <div className="app-card">
+          <div className="row"><input className="inp mono" style={{ flex: 1 }} placeholder={`${t.short}-AB12CD`} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && find()} aria-label="Reference" /><button className="btn pri" onClick={find}>Track</button></div>
+          {res === false && <p className="muted small">We couldn't find that reference. Check your receipt or contact us.</p>}
+          {res && <><div className="meta"><span>Status</span><b>{CUSTOMER_LABEL[res.status]}</b></div><div className="meta"><span>Amount</span><b>{gbp2(res.sendAmount)} → {num(res.receiveAmount)} {res.cur}</b></div><div className="meta"><span>Last update</span><b>{fmtDate(res.updatedAt)}</b></div></>}
+        </div>
+        <p className="muted small" style={{ textAlign: 'center' }}><Link to={`/app/${t.slug}`}>Sign in</Link> to see full details.</p>
+      </div>
+    </>
+  )
+}
+
 function Profile({ t, c }) {
   const logout = useStore((s) => s.customerLogout)
   const [picked, setPicked] = useState(DOC_TYPES[0])
@@ -284,6 +308,7 @@ function Profile({ t, c }) {
           {c.kyc.docs.map((d) => <div key={d.id} className="meta"><span>{d.type}</span><b>{d.status}</b></div>)}
           {c.kyc.status !== 'verified' && <><Field label="Document type" id="p-d"><select id="p-d" className="sel" value={picked} onChange={(e) => setPicked(e.target.value)}>{DOC_TYPES.map((d) => <option key={d}>{d}</option>)}</select></Field><button className="app-btn" onClick={upload}>Take a photo (demo upload)</button></>}
         </div>
+        {t.modules?.includes('rewards') && t.rewards?.enabled && <div className="app-card"><h3>Rewards</h3><div className="meta"><span>Points</span><b>{(c.points || 0).toLocaleString('en-GB')}</b></div><div className="meta"><span>Credit available</span><b>{gbp2(c.credit || 0)}</b></div><p className="muted small">Earn {t.rewards.pointsPerPound} point{t.rewards.pointsPerPound === 1 ? '' : 's'} per £1 sent. {t.rewards.redeemRate} points = £1 off fees.</p>{(c.points || 0) >= t.rewards.redeemRate && <button className="app-btn alt" onClick={() => act((d) => M.redeemPoints(d, c.id, Math.floor(c.points / t.rewards.redeemRate) * t.rewards.redeemRate, 'Customer'), (v) => `£${v} credit added`)}>Redeem {Math.floor(c.points / t.rewards.redeemRate) * t.rewards.redeemRate} points</button>}</div>}
         <div className="app-card"><h3>Limits</h3><div className="meta"><span>Per day</span><b>{gbp2(t.compliance.dailyLimit)}</b></div><div className="meta"><span>Per transfer</span><b>{gbp2(Math.max(...t.corridors.map((x) => x.max)))}</b></div><p className="muted small">We may ask where the money comes from for larger transfers. This is a legal requirement.</p></div>
         <div className="app-card"><h3>Help</h3>
           {[privacy, complaints].filter(Boolean).map((p) => <details key={p.key}><summary className="small" style={{ cursor: 'pointer' }}>{p.title}</summary><Markdown text={p.versions[p.versions.length - 1].body} /></details>)}

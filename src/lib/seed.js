@@ -1,7 +1,8 @@
 // Builds a realistic demo database by running the real engine operations with past timestamps.
 import * as E from './engine'
 import { withSeed, pick, between, DAY, now, uid } from './util'
-import { PURPOSES, SOURCES_OF_FUNDS, OCCUPATIONS } from './reference'
+import { PURPOSES, SOURCES_OF_FUNDS, OCCUPATIONS, DEFAULT_PLATFORM, syncFromPlatform } from './reference'
+import * as M from './modules'
 
 const FIRST = ['Bilal', 'Chiamaka', 'Priya', 'Rafiq', 'Maria', 'Kwame', 'Ayesha', 'Tunde', 'Sanjay', 'Grace', 'Imran', 'Fatima', 'Usman', 'Ngozi', 'Arjun', 'Shirin', 'Kofi', 'Rosa', 'Hamza', 'Joy', 'Tariq', 'Mehwish', 'Emeka', 'Divya']
 const LAST = ['Ahmed', 'Okafor', 'Nair', 'Hossain', 'Santos', 'Mensah', 'Khan', 'Bakare', 'Patel', 'Wanjiru', 'Qureshi', 'Begum', 'Malik', 'Eze', 'Sharma', 'Rahman', 'Asante', 'Reyes', 'Butt', 'Adeyemi', 'Mirza', 'Chaudhry', 'Obi', 'Iyer']
@@ -110,12 +111,14 @@ function seedTenant(db, t, nCustomers, nTx, specials) {
 
 export function buildSeed() {
   return withSeed('coremit-demo-v1', () => {
-    const db = { version: 2, tenants: [], customers: [], recipients: [], transactions: [], payIns: [], cases: [], sars: [], audit: [], invites: [], counters: {}, journals: [], customPartners: [], integrationRequests: [] }
+    const platform = structuredClone(DEFAULT_PLATFORM); platform.rateHistory = []
+    syncFromPlatform(platform)
+    const db = { version: 3, platform, deals: [], tenants: [], customers: [], recipients: [], transactions: [], payIns: [], cases: [], sars: [], audit: [], invites: [], counters: {}, journals: [], customPartners: [], integrationRequests: [] }
     const lagos = { id: 'custom_lagos', name: 'Lagos Settle (custom)', cur: ['NGN', 'GHS'], methods: ['Bank', 'Mobile wallet'], included: false, tenantId: 'sahara', status: 'live' }
     db.customPartners.push(lagos)
     const ng = E.makeTenant({
       id: 'northgate', name: 'Northgate Remit', legalName: 'Northgate Remit Ltd', short: 'NGR', slug: 'northgate', domain: 'send.northgateremit.co.uk', status: 'live',
-      frn: '900123', mlr: 'XBML00000123456', email: 'owner@northgateremit.co.uk', plan: 'Growth', createdAt: now() - 60 * DAY, liveAt: now() - 58 * DAY, setupSeconds: 588,
+      frn: '900123', mlr: 'XBML00000123456', email: 'owner@northgateremit.co.uk', plan: 'Growth', branches: [{ id: 'main', name: 'Barking (head office)', address: '12 Station Parade, Barking IG11 8DN' }, { id: 'ilford', name: 'Ilford', address: '88 High Road, Ilford IG1 1DE' }], rewards: { enabled: true, pointsPerPound: 1, referralBonus: 10, redeemRate: 100 }, createdAt: now() - 60 * DAY, liveAt: now() - 58 * DAY, setupSeconds: 588,
       brand: { color: '#0E5E6F', accent: '#F2A541', appName: 'Northgate' },
       corridors: [
         { cur: 'PKR', enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 },
@@ -174,6 +177,27 @@ export function buildSeed() {
     for (const t of [ng, sh]) for (const pid of t.partners) t.treasury[pid] = E.balance(db, t, `prefund_${pid}`)
     db.integrationRequests.unshift({ id: 'req_kestrel_kyc', tenantId: 'kestrel', kind: 'kyc', name: 'Onfido', notes: 'We already have a contract with Onfido and want to keep it.', cur: [], status: 'requested', quote: null, createdAt: now() - 3 * 3600000, by: 'hello@kestrelpay.co.uk' })
     db.integrationRequests.unshift({ id: 'req_sahara_payin', tenantId: 'sahara', kind: 'payin', name: 'Tide Business', notes: 'Second operating account.', cur: [], status: 'quoted', quote: { setup: 2500, monthly: 150, weeks: 3, note: 'API available; 3 weeks.' }, createdAt: now() - 9 * DAY, by: 'ops@saharaexchange.com' })
+    // Agents, bureau de change, developer settings for Northgate
+    M.saveAgent(db, ng.id, { name: 'Ilford Agent 03', branchId: 'ilford', commissionPct: 30, floatLimit: 5000, contact: 'agent03@northgateremit.co.uk' }, 'Owner')
+    M.saveAgent(db, ng.id, { name: 'Green Street Travel', branchId: 'main', commissionPct: 25, floatLimit: 3000, contact: 'gst@example.com' }, 'Owner')
+    ng.staff = ng.staff.filter((s) => s.name !== 'Ilford Agent 03' || s.agentId)
+    const ag = ng.agents[0]
+    M.agentFloat(db, ng.id, ag.id, 2000, 'issue', 'Owner', now() - 12 * DAY)
+    for (const tx of db.transactions.filter((x) => x.tenantId === ng.id && x.channel === 'Branch').slice(0, 9)) { tx.agentId = ag.id; tx.channel = 'Agent'; if (tx.status === 'paid') ag.commissionDue = +(ag.commissionDue + tx.fee * 0.3).toFixed(2) }
+    M.setBureauSettings(db, ng.id, { idThreshold: 5000, linkedHours: 24, spreadPct: 3, currencies: ['EUR', 'USD', 'AED', 'TRY', 'PKR'] }, 'Owner')
+    M.stockMovement(db, ng.id, { kind: 'gbp_in', branchId: 'main', qty: 8000 }, 'Owner', now() - 5 * DAY)
+    M.stockMovement(db, ng.id, { kind: 'buy_wholesale', branchId: 'main', code: 'EUR', qty: 12000, gbpCost: 10350, supplier: 'Wholesale FX Ltd' }, 'Owner', now() - 5 * DAY)
+    M.stockMovement(db, ng.id, { kind: 'buy_wholesale', branchId: 'main', code: 'USD', qty: 9000, gbpCost: 6900, supplier: 'Wholesale FX Ltd' }, 'Owner', now() - 5 * DAY)
+    M.stockMovement(db, ng.id, { kind: 'buy_wholesale', branchId: 'main', code: 'AED', qty: 20000, gbpCost: 4180, supplier: 'Wholesale FX Ltd' }, 'Owner', now() - 4 * DAY)
+    M.stockMovement(db, ng.id, { kind: 'buy_wholesale', branchId: 'main', code: 'TRY', qty: 60000, gbpCost: 1340, supplier: 'Wholesale FX Ltd' }, 'Owner', now() - 4 * DAY)
+    const dealsSpec = [['sell', 'EUR', 500, '', now() - 3 * DAY], ['sell', 'USD', 1200, '', now() - 2.5 * DAY], ['buy', 'EUR', 850, '', now() - 2 * DAY], ['sell', 'AED', 3000, '', now() - 1.5 * DAY], ['sell', 'EUR', 6000, 'Nadia Karim', now() - DAY], ['sell', 'TRY', 15000, '', now() - 5 * 3600000], ['buy', 'USD', 400, '', now() - 2 * 3600000], ['sell', 'EUR', 300, '', now() - 40 * 60000]]
+    for (const [side, code, amt, name, at] of dealsSpec) M.createDeal(db, ng.id, { side, code, amount: amt, by: 'foreign', branchId: 'main', customerName: name, idType: name ? 'Passport' : '', idNumber: name ? '5512*****' : '' }, 'Sana Mirza', at)
+    M.createApiKey(db, ng.id, 'Website integration', 'Owner')
+    M.saveWebhook(db, ng.id, { url: 'https://northgateremit.co.uk/hooks/coremit', events: ['transfer.paid', 'transfer.refunded', 'customer.kyc_verified'] }, 'Owner')
+    db.customers.filter((c) => c.tenantId === ng.id).slice(0, 3).forEach((c, i) => M.setCompany(db, c.id, { regNo: `1234567${i}`, contact: c.email, monthlyLimit: 25000 * (i + 1), sector: ['Import/export', 'Restaurant group', 'Construction'][i] }, 'Owner'))
+    db.customers.filter((c) => c.tenantId === ng.id && c.type !== 'business').forEach((c) => { c.points = Math.round(db.transactions.filter((x) => x.customerId === c.id && x.status === 'paid').reduce((a, x) => a + x.sendAmount, 0)) })
+    M.setCurrency(db, 'USD', { rate: 1.315, source: 'dailyfx', country: 'United States', cash: true }, 'sikandarazam')
+    db.platform.rateHistory.unshift({ id: 'rt_seed1', code: 'USD', rate: 1.32, prev: 1.297, source: 'dailyfx', by: 'sikandarazam', at: now() - 14 * DAY }, { id: 'rt_seed2', code: 'PKR', rate: 372.4, prev: 371.9, source: 'dailyfx', by: 'thefxsoft', at: now() - 3 * DAY })
     db.invites.push({ token: 'bmx7q2ka', label: 'Barking Money Express', createdAt: now() - 2 * DAY, expiresAt: now() + 5 * DAY, usedBy: null, createdBy: 'Zaland Shah' })
     E.audit(db, { tenantId: 'kestrel', actor: 'hello@kestrelpay.co.uk', action: 'Completed onboarding in 11m 40s', target: 'Kestrel Pay', at: now() - 3 * 3600000 })
     db.audit.sort((a, b) => b.at - a.at)

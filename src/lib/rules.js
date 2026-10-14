@@ -4,6 +4,7 @@
 // hold  → transfer stops until a compliance user releases it
 // block → transfer stops; release needs MLRO / Admin sign-off
 import { DAY, ageFrom, uid } from './util'
+import { ID_DOC_TYPES } from './reference'
 
 export const RULE_TYPES = {
   amount_over: { label: 'Single transfer above amount', params: [{ k: 'amount', label: 'Amount (£)', type: 'number' }], describe: (p) => `Transfer over £${p.amount}` },
@@ -95,7 +96,7 @@ export function evaluate(db, tx) {
         if (want === 'first-time' && !first) break
         if (want === 'existing' && first) break
         const ok = (d) => d.status === 'verified'
-        const have = (name) => name === 'Photo ID' ? c.kyc.docs.some((d) => ok(d) && ['Passport', 'UK driving licence', 'National ID card'].includes(d.type)) : c.kyc.docs.some((d) => ok(d) && d.type === name)
+        const have = (name) => name === 'Photo ID' ? c.kyc.docs.some((d) => ok(d) && ID_DOC_TYPES.includes(d.type)) : c.kyc.docs.some((d) => ok(d) && d.type === name)
         const missing = (p.docs || []).filter((d) => !have(d))
         if (missing.length) detail = `Missing: ${missing.join(', ')}`
         break

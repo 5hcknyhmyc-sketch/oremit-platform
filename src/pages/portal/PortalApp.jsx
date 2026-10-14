@@ -1,11 +1,12 @@
 import { createContext, useContext } from 'react'
 import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, Landmark, Users, ShieldCheck, Wallet, BarChart3, Settings as Cog } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, Landmark, Users, ShieldCheck, Wallet, BarChart3, Settings as Cog, Store, Building, Coins, Gift, Search, Code2 } from 'lucide-react'
 import { useStore } from '../../store'
 import { Logo, brandVars } from '../../components/ui'
 import TopBar from '../../components/TopBar'
 import AiPanel from '../../components/AiPanel'
 import { MODULES, DECISION_ROLES, SAR_ROLES } from '../../lib/reference'
+import { roleModules } from '../../lib/modules'
 import Dashboard from './Dashboard'
 import Transactions from './Transactions'
 import Payments from './Payments'
@@ -14,9 +15,15 @@ import Compliance from './Compliance'
 import Treasury from './Treasury'
 import Reports from './Reports'
 import Settings from './Settings'
+import Agents from './Agents'
+import Corporate from './Corporate'
+import Bureau from './Bureau'
+import Rewards from './Rewards'
+import Developer from './Developer'
+import TrackerPage from './TrackerPage'
 
-const ICONS = { dashboard: LayoutDashboard, transactions: ArrowLeftRight, payments: Landmark, customers: Users, compliance: ShieldCheck, treasury: Wallet, reports: BarChart3, settings: Cog }
-const PATHS = { dashboard: '/portal', transactions: '/portal/transactions', payments: '/portal/payments', customers: '/portal/customers', compliance: '/portal/compliance', treasury: '/portal/treasury', reports: '/portal/reports', settings: '/portal/settings' }
+const ICONS = { dashboard: LayoutDashboard, transactions: ArrowLeftRight, payments: Landmark, customers: Users, compliance: ShieldCheck, treasury: Wallet, reports: BarChart3, settings: Cog, agents: Store, corporate: Building, bureau: Coins, rewards: Gift, tracker: Search, developer: Code2 }
+const PATHS = Object.fromEntries(['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'agents', 'corporate', 'bureau', 'rewards', 'tracker', 'developer'].map((m) => [m, m === 'dashboard' ? '/portal' : `/portal/${m}`]))
 
 const Ctx = createContext(null)
 export const usePortal = () => useContext(Ctx)
@@ -29,9 +36,9 @@ export default function PortalApp() {
   if (!session || session.kind !== 'msb') return <Navigate to="/" replace />
   const t = db.tenants.find((x) => x.id === session.tenantId)
   if (!t) return <Navigate to="/" replace />
-  const allowed = t.roles[session.role] || []
+  const allowed = roleModules(t, session.role)
   const ctx = {
-    db, t, session, role: session.role, actor: session.name,
+    db, t, session, role: session.role, actor: session.name, agentId: t.staff.find((s) => s.name === session.name)?.agentId || null,
     can: (m) => allowed.includes(m),
     canDecide: DECISION_ROLES.includes(session.role),
     canSar: SAR_ROLES.includes(session.role),
@@ -75,6 +82,12 @@ export default function PortalApp() {
               <Route path="treasury/*" element={guard('treasury', <Treasury />)} />
               <Route path="reports" element={guard('reports', <Reports />)} />
               <Route path="settings/*" element={guard('settings', <Settings />)} />
+              <Route path="agents/*" element={guard('agents', <Agents />)} />
+              <Route path="corporate/*" element={guard('corporate', <Corporate />)} />
+              <Route path="bureau/*" element={guard('bureau', <Bureau />)} />
+              <Route path="rewards" element={guard('rewards', <Rewards />)} />
+              <Route path="tracker" element={guard('tracker', <TrackerPage />)} />
+              <Route path="developer/*" element={guard('developer', <Developer />)} />
               <Route path="*" element={<Navigate to="/portal" replace />} />
             </Routes>
           </main>
@@ -85,4 +98,4 @@ export default function PortalApp() {
   )
 }
 
-const NoAccess = () => <div className="panel"><div className="empty">Your role doesn't include this section. Ask your admin to change it in Settings → Staff & roles.</div></div>
+const NoAccess = () => <div className="panel"><div className="empty">This section is not enabled for you. An admin can switch modules on under Settings → Modules and set role access under Staff & roles.</div></div>

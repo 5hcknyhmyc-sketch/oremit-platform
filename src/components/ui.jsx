@@ -4,6 +4,15 @@ import { X } from 'lucide-react'
 import { useStore } from '../store'
 import { TX_STATUS } from '../lib/reference'
 import { initials, inkOn } from '../lib/util'
+import { PLATFORM } from '../lib/reference'
+
+// Platform wordmark: highlights the second capital letter (Co[R]emit) when there is one.
+export function Wordmark() {
+  const n = PLATFORM.name || ''
+  const caps = [...n].map((ch, i) => (i > 0 && ch >= 'A' && ch <= 'Z' ? i : -1)).filter((i) => i > 0)
+  const i = caps[0]
+  return <span className="wordmark">{i ? <>{n.slice(0, i)}<i>{n[i]}</i>{n.slice(i + 1)}</> : n}<small>by {PLATFORM.owner}</small></span>
+}
 
 export const Pill = ({ tone = 'mute', children }) => <span className={`pill ${tone}`}>{children}</span>
 export const TxStatus = ({ s }) => <Pill tone={TX_STATUS[s]?.tone}>{TX_STATUS[s]?.label || s}</Pill>

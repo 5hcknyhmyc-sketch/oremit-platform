@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { buildSeed } from './lib/seed'
 import { OpError } from './lib/engine'
+import { syncFromPlatform } from './lib/reference'
 
 export const useStore = create(
   persist(
@@ -14,7 +15,9 @@ export const useStore = create(
       toast: null,
       run(fn) {
         const db = structuredClone(get().db)
+        syncFromPlatform(db.platform)
         const result = fn(db)
+        syncFromPlatform(db.platform)
         set({ db })
         return result
       },
@@ -22,14 +25,15 @@ export const useStore = create(
       logout() { set({ session: null }) },
       customerLogin(tenantId, customerId) { set({ customerSessions: { ...get().customerSessions, [tenantId]: customerId } }) },
       customerLogout(tenantId) { const c = { ...get().customerSessions }; delete c[tenantId]; set({ customerSessions: c }) },
-      reset() { set({ db: buildSeed(), customerSessions: {} }) },
+      reset() { const db = buildSeed(); syncFromPlatform(db.platform); set({ db, customerSessions: {} }) },
       notify(msg, tone = 'ok') { set({ toast: { msg, tone, id: Date.now() } }) },
     }),
     {
       name: 'coremit-demo',
-      version: 2,
+      version: 3,
       // Old browser data from an earlier build is replaced with a fresh seed.
-      migrate: (state, version) => (version < 2 || !state?.db?.journals ? { db: buildSeed(), session: null, customerSessions: {} } : state),
+      migrate: (state, version) => (version < 3 || !state?.db?.platform ? { db: buildSeed(), session: null, customerSessions: {} } : state),
+      onRehydrateStorage: () => (state) => { if (state?.db?.platform) syncFromPlatform(state.db.platform) },
       partialize: (s) => ({ db: s.db, session: s.session, customerSessions: s.customerSessions }),
     },
   ),
