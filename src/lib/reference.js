@@ -4,7 +4,11 @@
 // every time the store changes, so the rest of the app can keep importing them.
 
 export const DEFAULT_PLATFORM = {
-  name: 'CoRemit', owner: 'TheFXSoft', domain: 'coremit.app', supportEmail: 'support@thefxsoft.com',
+  name: 'TheFXSoft', owner: 'TheFXSoft Ltd', domain: 'thefxsoft.app', supportEmail: 'support@thefxsoft.com',
+  products: [
+    { id: 'remittance', label: 'Money remittance', desc: 'Send money abroad: customer app, payouts, compliance, treasury', modules: ['transactions', 'payments', 'tracker'] },
+    { id: 'bureau', label: 'Bureau de change', desc: 'Over-the-counter cash FX: rate board, tills, stock, deals, online reservations', modules: ['bureau'] },
+  ],
   baseCurrency: 'GBP',
   currencies: {
     PKR: { country: 'Pakistan', rate: 372.4, enabled: true, cash: true },
@@ -37,6 +41,7 @@ export const DEFAULT_PLATFORM = {
     { id: 'custom', name: 'Custom bank integration', kind: 'Quoted separately', included: false },
   ],
   plans: [
+    { id: 'Bureau', name: 'Bureau', monthly: 149, perTx: 0, modules: ['dashboard', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'bureau', 'developer'] },
     { id: 'Starter', name: 'Starter', monthly: 199, perTx: 0.4, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker'] },
     { id: 'Growth', name: 'Growth', monthly: 499, perTx: 0.25, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'agents', 'corporate', 'rewards', 'bureau', 'developer'] },
     { id: 'Enterprise', name: 'Enterprise', monthly: 1200, perTx: 0.15, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'agents', 'corporate', 'rewards', 'bureau', 'developer'] },
@@ -97,14 +102,15 @@ export const OCCUPATIONS = []
 export const RELATIONSHIPS = []
 export const WATCHLIST = []
 export const PEP_LIST = []
-export const PLATFORM = { name: 'CoRemit', owner: 'TheFXSoft', domain: 'coremit.app' }
+export const PLATFORM = { name: 'TheFXSoft', owner: 'TheFXSoft Ltd', domain: 'thefxsoft.app' }
+export const PRODUCTS = []
 
 const fillArr = (target, src) => { target.length = 0; for (const x of src || []) target.push(x) }
 const fillObj = (target, src) => { for (const k of Object.keys(target)) delete target[k]; Object.assign(target, src || {}) }
 export function syncFromPlatform(p) {
   if (!p) return
   fillObj(CURRENCIES, Object.fromEntries(Object.entries(p.currencies || {}).filter(([, v]) => v.enabled !== false)))
-  fillArr(PARTNERS, p.partners); fillArr(KYC_PROVIDERS, p.kycProviders); fillArr(PAYIN_BANKS, p.payinBanks); fillArr(MODULES, p.modules); fillArr(PLANS, p.plans)
+  fillArr(PRODUCTS, p.products); fillArr(PARTNERS, p.partners); fillArr(KYC_PROVIDERS, p.kycProviders); fillArr(PAYIN_BANKS, p.payinBanks); fillArr(MODULES, p.modules); fillArr(PLANS, p.plans)
   fillArr(PURPOSES, p.lists?.purposes); fillArr(SOURCES_OF_FUNDS, p.lists?.sourcesOfFunds); fillArr(DOC_TYPES, p.lists?.docTypes); fillArr(ID_DOC_TYPES, p.lists?.idDocTypes)
   fillArr(OCCUPATIONS, p.lists?.occupations); fillArr(RELATIONSHIPS, p.lists?.relationships); fillArr(WATCHLIST, p.watchlist); fillArr(PEP_LIST, p.pepList)
   Object.assign(PLATFORM, { name: p.name, owner: p.owner, domain: p.domain, supportEmail: p.supportEmail })
@@ -122,6 +128,7 @@ export const DEFAULT_ROLES = {
   MLRO: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'reports', 'corporate', 'agents', 'bureau'],
   'Compliance officer': ['dashboard', 'transactions', 'customers', 'compliance', 'corporate'],
   Cashier: ['dashboard', 'transactions', 'payments', 'customers', 'bureau', 'tracker'],
+  'Bureau cashier': ['dashboard', 'bureau', 'customers'],
   Agent: ['transactions', 'customers', 'tracker'],
 }
 // Roles allowed to make final compliance decisions (release held transfers, decide SARs)

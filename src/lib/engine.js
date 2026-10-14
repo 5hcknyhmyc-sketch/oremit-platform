@@ -1,6 +1,6 @@
 // The platform engine. Every operation takes the database object `db` and mutates it.
 // In production each op maps to an API endpoint / database transaction (see docs/ARCHITECTURE.md).
-import { CURRENCIES, PARTNERS, partnerFor, partnerById, KYC_PROVIDERS, PAYIN_BANKS, DEFAULT_ROLES, ID_DOC_TYPES, planById } from './reference'
+import { CURRENCIES, PARTNERS, partnerFor, partnerById, KYC_PROVIDERS, PAYIN_BANKS, DEFAULT_ROLES, ID_DOC_TYPES, planById, PLATFORM } from './reference'
 import { evaluate, decide, topSeverity, defaultRules } from './rules'
 import { screenName } from './screening'
 import { defaultPolicies } from './policies'
@@ -35,12 +35,13 @@ export function makeTenant(o) {
       ...(o.compliance || {}),
     },
     bank: o.bank || { name: `${o.legalName || o.name} — client account`, sortCode: '04-00-75', account: String(10000000 + Math.floor(Math.random() * 89999999)) },
+    products: o.products || ['remittance'],
     roles: o.roles || JSON.parse(JSON.stringify(DEFAULT_ROLES)),
     modules: o.modules || [...planById(o.plan || 'Starter').modules],
     agents: o.agents || [], branches: o.branches || [{ id: 'main', name: 'Head office' }],
     rewards: { enabled: false, pointsPerPound: 1, referralBonus: 10, redeemRate: 100, ...(o.rewards || {}) },
     apiKeys: o.apiKeys || [], webhooks: o.webhooks || [],
-    bureau: o.bureau || { idThreshold: 5000, linkedHours: 24, spreadPct: 3, board: {}, stock: {} },
+    bureau: { idThreshold: 5000, linkedHours: 24, spreadPct: 3, board: {}, stock: {}, suppliers: ['Wholesale FX Ltd'], reservationHours: 24, shifts: [], orders: [], ...(o.bureau || {}) },
     staff: o.staff || [{ id: uid('stf'), name: 'Owner', email: o.email || '', role: 'Admin' }],
     treasury: o.treasury || Object.fromEntries((o.partners || []).map((p) => [p, 0])),
     topUps: [],
@@ -130,8 +131,8 @@ export function setIntegrationStatus(db, reqId, status, actor, at = now()) {
 }
 export const tenantOf = (db, id) => db.tenants.find((t) => t.id === id) || fail('MSB not found')
 
-export function createInvite(db, actor) {
-  const inv = { token: shortCode(8).toLowerCase(), createdAt: now(), expiresAt: now() + 7 * DAY, usedBy: null, createdBy: actor }
+export function createInvite(db, actor, label = '', products = ['remittance']) {
+  const inv = { token: shortCode(8).toLowerCase(), label, products, createdAt: now(), expiresAt: now() + 7 * DAY, usedBy: null, createdBy: actor }
   db.invites.unshift(inv)
   audit(db, { actor, action: 'Created onboarding link', target: inv.token })
   return inv
@@ -142,24 +143,31 @@ export function completeOnboarding(db, token, data, seconds) {
   if (!inv) fail('This onboarding link is not valid.')
   if (inv.usedBy) fail('This onboarding link has already been used.')
   if (inv.expiresAt < now()) fail('This onboarding link has expired. Ask TheFXSoft for a new one.')
-  if (db.tenants.some((t) => t.slug === data.slug)) fail(`${data.slug}.coremit.app is already taken.`)
+  if (db.tenants.some((t) => t.slug === data.slug)) fail(`${data.slug}.${PLATFORM.domain} is already taken.`)
+  const products = inv.products || ['remittance']
+  const remit = products.includes('remittance'), bdc = products.includes('bureau')
+  const plan = data.plan || (remit ? 'Starter' : 'Bureau')
   const t = makeTenant({
     name: data.name, legalName: data.legalName, slug: data.slug, domain: data.domain, frn: data.frn, mlr: data.mlr, email: data.email,
-    status: 'review', setupSeconds: seconds,
+    status: 'review', setupSeconds: seconds, products, plan,
+    modules: [...new Set([...planById(plan).modules, ...(bdc ? ['bureau'] : []), ...(remit ? ['transactions', 'payments', 'tracker'] : [])])].filter((m) => remit || !['transactions', 'payments', 'tracker'].includes(m)),
+    branches: (data.branches || []).length ? data.branches.map((b, i) => ({ id: i === 0 ? 'main' : uid('br'), name: b.name, address: b.address || '' })) : undefined,
+    bureau: bdc ? { idThreshold: +data.bdcThreshold || 5000, linkedHours: 24, spreadPct: +data.spread || 3, board: {}, stock: {}, suppliers: data.supplier ? [data.supplier] : ['Wholesale FX Ltd'], currencies: data.cashCurrencies || [], reservationHours: 24, shifts: [], orders: [] } : undefined,
     brand: { color: data.color, accent: data.accent, logo: data.logo, appName: data.appName || data.name },
-    corridors: data.corridors.map((cur) => ({ cur, enabled: true, fee: +data.fee || 0, margin: +data.margin || 0, min: 10, max: +data.daily || 10000 })),
-    partners: data.partners,
+    corridors: remit ? data.corridors.map((cur) => ({ cur, enabled: true, fee: +data.fee || 0, margin: +data.margin || 0, min: 10, max: +data.daily || 10000 })) : [],
+    partners: remit ? data.partners : [],
     integrations: { kyc: { provider: data.kyc, status: data.kyc === 'custom' ? 'requested' : 'connected' }, payin: data.payin },
     declaration: { accepted: !!data.declaration, by: data.ownerName || data.email, at: now() },
     compliance: { mlro: data.mlro, eddThreshold: +data.edd, sofThreshold: +data.sof, dailyLimit: +data.daily, idv: data.idv, screening: data.screening, autoRelease: { enabled: true, maxAmount: Math.min(2000, +data.sof || 2000) } },
     staff: [{ id: uid('stf'), name: data.ownerName || 'Owner', email: data.email, role: 'Admin' }, ...(data.mlro ? [{ id: uid('stf'), name: data.mlro, email: '', role: 'MLRO' }] : [])],
-    checks: { reg: /^\d{6,7}$/.test(data.frn) && !!data.mlr, kyc: data.kyc !== 'custom', payout: data.partners.some((p) => PARTNERS.some((x) => x.id === p)), domain: true },
+    checks: { reg: (remit ? /^\d{6,7}$/.test(data.frn) : true) && !!data.mlr, kyc: data.kyc !== 'custom', payout: !remit || data.partners.some((p) => PARTNERS.some((x) => x.id === p)), prefund: !remit, domain: true },
   })
   if (!data.declaration) fail('Please confirm the declaration before launching.')
   db.tenants.push(t)
   inv.usedBy = t.id
   if (data.kyc === 'custom') requestIntegration(db, t.id, { kind: 'kyc', name: data.kycCustomName || 'Custom KYC provider', notes: 'Requested at onboarding' }, data.email, now())
-  if (data.payoutCustomName) requestIntegration(db, t.id, { kind: 'payout', name: data.payoutCustomName, notes: 'Requested at onboarding', cur: data.corridors }, data.email, now())
+  if (bdc && +data.openingFloat > 0) { t.bureau.stock[`main:GBP`] = +data.openingFloat; t.accounts.push({ id: 'till_main_GBP', name: `Till ${t.branches[0].name} — GBP`, type: 'till', cur: 'GBP', branchId: 'main' }); post(db, t.id, { type: 'OPEN', details: 'Opening GBP till float', by: data.email, at: now(), lines: [{ account: 'till_main_GBP', debit: +data.openingFloat }, { account: t.accounts.find((a) => a.type === 'bank').id, credit: +data.openingFloat }] }) }
+  if (remit && data.payoutCustomName) requestIntegration(db, t.id, { kind: 'payout', name: data.payoutCustomName, notes: 'Requested at onboarding', cur: data.corridors }, data.email, now())
   audit(db, { tenantId: t.id, actor: data.email || data.name, action: `Completed onboarding in ${Math.floor(seconds / 60)}m ${seconds % 60}s`, target: t.name })
   return t
 }

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useStore } from './store'
 import { completePayout } from './lib/engine'
+import { expireReservations } from './lib/modules'
 import { Toast } from './components/ui'
 import Login from './pages/Login'
 import AdminApp from './pages/admin/AdminApp'
@@ -16,7 +17,8 @@ function usePartnerSimulator() {
     const h = setInterval(() => {
       const { db, run } = useStore.getState()
       const due = db.transactions.filter((t) => t.status === 'released' && Date.now() - t.updatedAt > 10000)
-      if (due.length) run((d) => due.forEach((t) => completePayout(d, t.id)))
+      const exp = db.reservations?.some((r) => r.status === 'reserved' && Date.now() > r.expiresAt)
+      if (due.length || exp) run((d) => { due.forEach((t) => completePayout(d, t.id)); expireReservations(d) })
     }, 4000)
     return () => clearInterval(h)
   }, [])
@@ -25,7 +27,7 @@ function usePartnerSimulator() {
 export default function App() {
   usePartnerSimulator()
   const db = useStore((s) => s.db)
-  useEffect(() => { if (!db.journals || !db.platform || !db.deals || db.tenants.some((t) => !t.integrations || !t.modules)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
+  useEffect(() => { if (!db.journals || !db.platform || !db.deals || !db.reservations || db.tenants.some((t) => !t.integrations || !t.modules || !t.products)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
   // In production, a request to <slug>.coremit.app or an MSB's own domain opens its customer app directly.
   const hostTenant = resolveHostTenant(db)
   return (

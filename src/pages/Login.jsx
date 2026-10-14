@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Building2, Smartphone, Link2 } from 'lucide-react'
 import { useStore, act } from '../store'
 import { Wordmark } from '../components/ui'
+import { PLATFORM } from '../lib/reference'
 import { createInvite } from '../lib/engine'
 import { Logo } from '../components/ui'
 
@@ -32,14 +33,18 @@ export default function Login() {
             </button>
             <button className="persona" onClick={tryOnboarding}>
               <div className="row"><Link2 size={20} /><b>Onboarding link</b></div>
-              <small>See what a new MSB fills in to launch in under 15 minutes.</small>
+              <small>See what a new remittance business fills in to launch in under 15 minutes.</small>
+            </button>
+            <button className="persona" onClick={() => { const inv = act((d) => createInvite(d, 'Demo', 'Demo bureau', ['bureau'])); if (inv) nav(`/onboard/${inv.token}`) }}>
+              <div className="row"><Link2 size={20} /><b>Onboarding link (bureau de change)</b></div>
+              <small>The shorter wizard a cash bureau fills in: currencies, spread, branches, till float.</small>
             </button>
           </div>
         </section>
 
         {live.map((t) => (
           <section className="stack-s" key={t.id}>
-            <div className="row"><Logo t={t} size="sm" /><h2 style={{ fontSize: 16 }}>{t.name}</h2><span className="muted small mono">{t.slug}.coremit.app</span></div>
+            <div className="row"><Logo t={t} size="sm" /><h2 style={{ fontSize: 16 }}>{t.name}</h2>{t.products.map((p) => <span key={p} className="tag">{p === 'bureau' ? 'Bureau de change' : 'Remittance'}</span>)}<span className="muted small mono">{t.slug}.{PLATFORM.domain}</span></div>
             <div className="personas">
               {t.staff.map((s) => (
                 <button key={s.id} className="persona" onClick={() => asStaff(t, s)}>
@@ -49,7 +54,7 @@ export default function Login() {
               ))}
               <button className="persona" onClick={() => nav(`/app/${t.slug}`)}>
                 <div className="row"><Smartphone size={20} /><b>Customer app</b></div>
-                <small>Sign up or sign in as a sender, in {t.name}'s brand.</small>
+                <small>{t.products.includes('remittance') ? 'Sign up or sign in as a sender' : 'Order currency for collection'}, in {t.name}'s brand.</small>
               </button>
             </div>
           </section>

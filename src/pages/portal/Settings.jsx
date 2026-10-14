@@ -5,7 +5,7 @@ import { usePortal } from './PortalApp'
 import { Panel, PageHead, Tabs, Field, Toggle, Modal, Pill } from '../../components/ui'
 import { act, useStore } from '../../store'
 import * as E from '../../lib/engine'
-import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS } from '../../lib/reference'
+import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM } from '../../lib/reference'
 import * as M from '../../lib/modules'
 import { AppPreview } from '../app/CustomerApp'
 import { uid, fmtDate } from '../../lib/util'
@@ -176,8 +176,8 @@ function Domain() {
   return (
     <Panel title="Domain" pad>
       <div className="stack">
-        <Field label="Platform address"><div className="linkbox"><code>https://{t.slug}.coremit.app</code><Pill tone="good">Active</Pill></div></Field>
-        <Field label="Custom domain" id="dom" hint="Add a CNAME record for this hostname pointing to tenants.coremit.app. SSL is issued automatically once DNS resolves."><div className="row"><input id="dom" className="inp" style={{ flex: 1 }} placeholder="send.yourbusiness.co.uk" value={dom} onChange={(e) => setDom(e.target.value.trim().toLowerCase())} /><button className="btn pri" onClick={() => saveTenant(t, actor, (tt) => { tt.domain = dom }, 'Domain saved', `Set custom domain ${dom}`)}>Save</button></div></Field>
+        <Field label="Platform address"><div className="linkbox"><code>https://{t.slug}.{PLATFORM.domain}</code><Pill tone="good">Active</Pill></div></Field>
+        <Field label="Custom domain" id="dom" hint="Add a CNAME record for this hostname pointing to tenants.{PLATFORM.domain}. SSL is issued automatically once DNS resolves."><div className="row"><input id="dom" className="inp" style={{ flex: 1 }} placeholder="send.yourbusiness.co.uk" value={dom} onChange={(e) => setDom(e.target.value.trim().toLowerCase())} /><button className="btn pri" onClick={() => saveTenant(t, actor, (tt) => { tt.domain = dom }, 'Domain saved', `Set custom domain ${dom}`)}>Save</button></div></Field>
         {t.domain && <div className="banner good">https://{t.domain} — SSL active (demo)</div>}
       </div>
     </Panel>

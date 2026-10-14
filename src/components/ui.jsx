@@ -9,9 +9,12 @@ import { PLATFORM } from '../lib/reference'
 // Platform wordmark: highlights the second capital letter (Co[R]emit) when there is one.
 export function Wordmark() {
   const n = PLATFORM.name || ''
-  const caps = [...n].map((ch, i) => (i > 0 && ch >= 'A' && ch <= 'Z' ? i : -1)).filter((i) => i > 0)
+  const up = (ch) => ch >= 'A' && ch <= 'Z'
+  const caps = [...n].map((ch, i) => (i > 0 && up(ch) ? i : -1)).filter((i) => i > 0)
   const i = caps[0]
-  return <span className="wordmark">{i ? <>{n.slice(0, i)}<i>{n[i]}</i>{n.slice(i + 1)}</> : n}<small>by {PLATFORM.owner}</small></span>
+  let j = i
+  while (i && j + 1 < n.length && up(n[j + 1]) && (j + 2 >= n.length || up(n[j + 2]))) j++
+  return <span className="wordmark">{i ? <>{n.slice(0, i)}<i>{n.slice(i, j + 1)}</i>{n.slice(j + 1)}</> : n}{PLATFORM.owner && PLATFORM.owner.replace(/ Ltd$/, '') !== n && <small>by {PLATFORM.owner}</small>}</span>
 }
 
 export const Pill = ({ tone = 'mute', children }) => <span className={`pill ${tone}`}>{children}</span>

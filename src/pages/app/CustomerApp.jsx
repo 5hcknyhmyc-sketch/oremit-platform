@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink, Link, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Home, Users, List, User, ChevronLeft, Copy, ShieldCheck } from 'lucide-react'
+import { Home, Users, List, User, ChevronLeft, Copy, ShieldCheck, Coins } from 'lucide-react'
 import { useStore, act } from '../../store'
 import { brandVars, TxStatus, Field, Pill, Markdown } from '../../components/ui'
 import * as E from '../../lib/engine'
@@ -10,6 +10,7 @@ import { gbp2, num, fmtDate, initials } from '../../lib/util'
 
 /* ---------- Static preview used by Settings → Branding and the onboarding wizard ---------- */
 export function AppPreview({ t }) {
+  if (!(t.products || ['remittance']).includes('remittance')) return <BureauPreview t={t} />
   const cur = t.corridors.find((c) => c.enabled)?.cur || 'PKR'
   const cor = t.corridors.find((c) => c.enabled)
   const rate = +(CURRENCIES[cur].rate * (1 - (cor?.margin || 0) / 100)).toFixed(4)
@@ -45,9 +46,12 @@ export default function CustomerApp() {
       <div className="app" style={brandVars(t)}>
         <Routes>
           <Route path="track" element={<PublicTrack t={t} />} />
+          <Route path="rates" element={<Currency t={t} c={null} />} />
           <Route path="*" element={!c ? <Welcome t={t} /> : (
           <Routes>
-            <Route index element={<AppHome t={t} c={c} />} />
+            <Route index element={t.products.includes('remittance') ? <AppHome t={t} c={c} /> : <Currency t={t} c={c} />} />
+            <Route path="currency" element={<Currency t={t} c={c} />} />
+            <Route path="orders" element={<Orders t={t} c={c} />} />
             <Route path="send" element={<Send t={t} c={c} />} />
             <Route path="recipients" element={<Recipients t={t} c={c} />} />
             <Route path="activity" element={<Activity t={t} c={c} />} />
@@ -73,7 +77,10 @@ function Top({ t, title, sub, back, children }) {
 }
 function Nav({ t }) {
   const base = `/app/${t.slug}`
-  return <nav className="app-nav">{[[base, 'Home', Home, true], [`${base}/recipients`, 'Recipients', Users], [`${base}/activity`, 'Activity', List], [`${base}/profile`, 'Profile', User]].map(([to, l, I, end]) => <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : '')}><I />{l}</NavLink>)}</nav>
+  const remit = t.products.includes('remittance')
+  const bdc = t.modules.includes('bureau')
+  const items = [...(remit ? [[base, 'Home', Home, true], [`${base}/recipients`, 'Recipients', Users], [`${base}/activity`, 'Activity', List]] : [[base, 'Currency', Coins, true], [`${base}/orders`, 'My orders', List]]), ...(remit && bdc ? [[`${base}/currency`, 'Currency', Coins]] : []), [`${base}/profile`, 'Profile', User]]
+  return <nav className="app-nav">{items.map(([to, l, I, end]) => <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : '')}><I />{l}</NavLink>)}</nav>
 }
 
 function Welcome({ t }) {
@@ -86,7 +93,7 @@ function Welcome({ t }) {
   const fraud = t.policies.find((p) => p.key === 'fraud')
   return (
     <>
-      <Top t={t} title={`Welcome to ${t.brand.appName || t.name}`} sub={`Send money to ${t.corridors.filter((c) => c.enabled).map((c) => CURRENCIES[c.cur].country).join(', ')}`} />
+      <Top t={t} title={`Welcome to ${t.brand.appName || t.name}`} sub={t.products.includes('remittance') ? `Send money to ${t.corridors.filter((c) => c.enabled).map((c) => CURRENCIES[c.cur].country).join(', ')}` : 'Order currency online, collect in store'}>{t.modules.includes('bureau') && <Link className="btn sm" to={`/app/${t.slug}/rates`}>Today's rates</Link>}</Top>
       <div className="app-body">
         <div className="app-card">
           <div className="row"><button className={`btn sm ${mode === 'in' ? 'pri' : ''}`} onClick={() => setMode('in')}>Sign in</button><button className={`btn sm ${mode === 'up' ? 'pri' : ''}`} onClick={() => setMode('up')}>Create account</button></div>
@@ -309,7 +316,7 @@ function Profile({ t, c }) {
           {c.kyc.status !== 'verified' && <><Field label="Document type" id="p-d"><select id="p-d" className="sel" value={picked} onChange={(e) => setPicked(e.target.value)}>{DOC_TYPES.map((d) => <option key={d}>{d}</option>)}</select></Field><button className="app-btn" onClick={upload}>Take a photo (demo upload)</button></>}
         </div>
         {t.modules?.includes('rewards') && t.rewards?.enabled && <div className="app-card"><h3>Rewards</h3><div className="meta"><span>Points</span><b>{(c.points || 0).toLocaleString('en-GB')}</b></div><div className="meta"><span>Credit available</span><b>{gbp2(c.credit || 0)}</b></div><p className="muted small">Earn {t.rewards.pointsPerPound} point{t.rewards.pointsPerPound === 1 ? '' : 's'} per £1 sent. {t.rewards.redeemRate} points = £1 off fees.</p>{(c.points || 0) >= t.rewards.redeemRate && <button className="app-btn alt" onClick={() => act((d) => M.redeemPoints(d, c.id, Math.floor(c.points / t.rewards.redeemRate) * t.rewards.redeemRate, 'Customer'), (v) => `£${v} credit added`)}>Redeem {Math.floor(c.points / t.rewards.redeemRate) * t.rewards.redeemRate} points</button>}</div>}
-        <div className="app-card"><h3>Limits</h3><div className="meta"><span>Per day</span><b>{gbp2(t.compliance.dailyLimit)}</b></div><div className="meta"><span>Per transfer</span><b>{gbp2(Math.max(...t.corridors.map((x) => x.max)))}</b></div><p className="muted small">We may ask where the money comes from for larger transfers. This is a legal requirement.</p></div>
+        <div className="app-card"><h3>Limits</h3><div className="meta"><span>Per day</span><b>{gbp2(t.compliance.dailyLimit)}</b></div>{t.corridors.length > 0 && <div className="meta"><span>Per transfer</span><b>{gbp2(Math.max(...t.corridors.map((x) => x.max)))}</b></div>}<p className="muted small">We may ask where the money comes from for larger transfers. This is a legal requirement.</p></div>
         <div className="app-card"><h3>Help</h3>
           {[privacy, complaints].filter(Boolean).map((p) => <details key={p.key}><summary className="small" style={{ cursor: 'pointer' }}>{p.title}</summary><Markdown text={p.versions[p.versions.length - 1].body} /></details>)}
           <p className="muted small">{t.legalName} is {t.frn ? `registered with the FCA (FRN ${t.frn})` : 'an FCA-registered payment institution'}{t.mlr ? ` and supervised by HMRC for anti-money laundering (${t.mlr})` : ''}.</p>
@@ -317,5 +324,64 @@ function Profile({ t, c }) {
       </div>
       <Nav t={t} />
     </>
+  )
+}
+
+
+function Currency({ t, c }) {
+  const db = useStore((s) => s.db)
+  const curs = t.bureau.currencies || Object.keys(CURRENCIES).filter((x) => CURRENCIES[x].cash)
+  const [f, setF] = useState({ side: 'sell', code: curs[0], amount: '500', by: 'foreign', branchId: t.branches[0]?.id })
+  const q = M.bdcQuote(t, f.side, f.code, +f.amount || 0, f.by)
+  const [done, setDone] = useState(null)
+  const reserve = () => { const r = act((d) => M.createReservation(d, t.id, { ...f, customerId: c?.id }, 'Customer')); if (r) setDone(r) }
+  return (
+    <>
+      <Top t={t} title={c ? `Hi ${c.name.split(' ')[0]}` : "Today's rates"} sub="Reserve online, collect in store" back={c ? null : `/app/${t.slug}`} />
+      <div className="app-body">
+        {done ? <div className="app-card"><Pill tone="good">Reserved</Pill><h3>{done.ref}</h3><div className="meta"><span>You collect</span><b>{num(done.foreign)} {done.code}</b></div><div className="meta"><span>You pay in store</span><b>{gbp2(done.gbp)}</b></div><div className="meta"><span>Rate held until</span><b>{fmtDate(done.expiresAt)}</b></div><div className="meta"><span>Branch</span><b>{t.branches.find((b) => b.id === done.branchId)?.name}</b></div><p className="muted small">Bring photo ID{done.gbp >= t.bureau.idThreshold ? ' (required for this amount)' : ''}. Pay by cash or card at the counter.</p><button className="app-btn alt" onClick={() => setDone(null)}>Reserve more</button></div> : (
+          <div className="app-card">
+            <div className="row">{[['sell', 'I want to buy currency'], ['buy', 'I want to sell currency']].map(([k, l]) => <button key={k} className={`btn sm ${f.side === k ? 'pri' : ''}`} onClick={() => setF({ ...f, side: k })}>{l}</button>)}</div>
+            <span className="app-sec">{f.by === 'foreign' ? `Amount in ${f.code}` : 'Amount in GBP'}</span>
+            <div className="amt"><input inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} aria-label="Amount" /><select value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} aria-label="Currency">{curs.map((x) => <option key={x}>{x}</option>)}</select></div>
+            <button className="btn sm" onClick={() => setF({ ...f, by: f.by === 'foreign' ? 'gbp' : 'foreign' })}>Enter in {f.by === 'foreign' ? 'GBP' : f.code} instead</button>
+            {q && <><div className="meta"><span>{f.side === 'sell' ? 'You pay' : 'You receive'}</span><b style={{ fontSize: 18 }}>{gbp2(q.gbp)}</b></div><div className="meta"><span>{f.side === 'sell' ? 'You receive' : 'You give'}</span><b style={{ fontSize: 18 }}>{num(q.foreign)} {q.code}</b></div><div className="meta"><span>Rate</span><b>1 GBP = {q.rate} {q.code}</b></div><div className="meta"><span>Commission</span><b>None</b></div></>}
+            <Field label="Collect at" id="rs-b"><select id="rs-b" className="sel" value={f.branchId} onChange={(e) => setF({ ...f, branchId: e.target.value })}>{t.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
+            <button className="app-btn" disabled={!q || !(q.gbp > 0)} onClick={reserve}>Reserve at this rate</button>
+            <p className="muted small">Rate held for {t.bureau.reservationHours || 24} hours. {c ? '' : 'Sign in for larger orders.'}</p>
+          </div>)}
+        <span className="app-sec">Today's rates</span>
+        <div className="app-card" style={{ padding: '4px 16px' }}>{curs.map((x) => { const r = M.boardRate(t, x); return r && <div className="app-item" key={x}><div className="av">{x.slice(0, 2)}</div><div className="grow"><b>{x}</b><small>{CURRENCIES[x]?.country}</small></div><div style={{ textAlign: 'right' }}><div className="num">{r.sell}</div><small className="muted">we buy {r.buy}</small></div></div> })}</div>
+      </div>
+      {c ? <Nav t={t} /> : null}
+    </>
+  )
+}
+function Orders({ t, c }) {
+  const db = useStore((s) => s.db)
+  const rows = db.reservations.filter((r) => r.tenantId === t.id && r.customerId === c.id)
+  const label = { reserved: 'Ready to collect', collected: 'Collected', expired: 'Expired', cancelled: 'Cancelled' }
+  return (
+    <>
+      <Top t={t} title="My orders" />
+      <div className="app-body"><div className="app-card" style={{ padding: '4px 16px' }}>{rows.length ? rows.map((r) => <div className="app-item" key={r.id}><div className="grow"><b>{num(r.foreign)} {r.code} · {gbp2(r.gbp)}</b><small>{r.ref} · {label[r.status]} · {t.branches.find((b) => b.id === r.branchId)?.name}</small></div>{r.status === 'reserved' && <button className="btn sm" onClick={() => act((d) => M.cancelReservation(d, r.id, 'Customer'), 'Cancelled')}>Cancel</button>}</div>) : <p className="muted small" style={{ padding: '12px 0' }}>No orders yet.</p>}</div></div>
+      <Nav t={t} />
+    </>
+  )
+}
+
+function BureauPreview({ t }) {
+  const curs = (t.bureau?.currencies?.length ? t.bureau.currencies : ['EUR', 'USD']).slice(0, 4)
+  const rate = (c) => { const mid = CURRENCIES[c]?.rate || 1; const s = (t.bureau?.spreadPct ?? 3) / 100; return { sell: (mid * (1 - s)).toFixed(4), buy: (mid * (1 + s)).toFixed(4) } }
+  return (
+    <div className="app" style={brandVars(t)}>
+      <div className="app-top"><div className="row"><div className="lg">{t.brand.logo ? <img src={t.brand.logo} alt="" /> : initials(t.brand.appName || t.name)}</div><b>{t.brand.appName || t.name}</b></div><div className="hi">Today's rates</div><div className="sub">Reserve online, collect in store</div></div>
+      <div className="app-body">
+        <div className="app-card"><span className="app-sec">I want to buy</span><div className="amt"><input value="500" readOnly aria-label="Amount" /><span className="cur">{curs[0]}</span></div><div className="meta"><span>You pay</span><b>£{(500 / rate(curs[0]).sell).toFixed(2)}</b></div><div className="meta"><span>Rate</span><b>1 GBP = {rate(curs[0]).sell}</b></div><button className="app-btn" type="button">Reserve at this rate</button></div>
+        <span className="app-sec">Rates</span>
+        <div className="app-card" style={{ padding: '4px 16px' }}>{curs.map((c) => <div className="app-item" key={c}><div className="av">{c.slice(0, 2)}</div><div className="grow"><b>{c}</b><small>{CURRENCIES[c]?.country}</small></div><div style={{ textAlign: 'right' }}><div className="num">{rate(c).sell}</div><small className="muted">we buy {rate(c).buy}</small></div></div>)}</div>
+      </div>
+      <nav className="app-nav"><a className="active"><Coins />Currency</a><a><List />My orders</a><a><User />Profile</a></nav>
+    </div>
   )
 }

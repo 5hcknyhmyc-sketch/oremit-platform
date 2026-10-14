@@ -5,7 +5,7 @@ import { useStore } from '../../store'
 import { Logo, brandVars } from '../../components/ui'
 import TopBar from '../../components/TopBar'
 import AiPanel from '../../components/AiPanel'
-import { MODULES, DECISION_ROLES, SAR_ROLES } from '../../lib/reference'
+import { MODULES, DECISION_ROLES, SAR_ROLES, PLATFORM } from '../../lib/reference'
 import { roleModules } from '../../lib/modules'
 import Dashboard from './Dashboard'
 import Transactions from './Transactions'
@@ -62,7 +62,7 @@ export default function PortalApp() {
         {t.status === 'suspended' && <div className="imp-banner">This MSB is suspended by the platform owner. Customers cannot send money.</div>}
         <div className="shell">
           <aside className="side">
-            <div className="tenant-id"><Logo t={t} /><div><b>{t.name}</b><span>{t.domain || `${t.slug}.coremit.app`}</span></div></div>
+            <div className="tenant-id"><Logo t={t} /><div><b>{t.name}</b><span>{t.domain || `${t.slug}.${PLATFORM.domain}`}</span></div></div>
             <nav className="nav">
               {MODULES.filter((m) => allowed.includes(m.id)).map((m) => {
                 const I = ICONS[m.id]

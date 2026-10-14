@@ -264,6 +264,7 @@ export function createDeal(db, tenantId, d, actor, at = now()) {
   if (needsId && !(d.customerName?.trim() && d.idType && d.idNumber?.trim())) fail(`Deals of £${t.bureau.idThreshold.toLocaleString('en-GB')} or more (including linked deals in ${t.bureau.linkedHours}h) need the customer's name and ID.`)
   if (q.side === 'sell' && stock(t, branchId, q.code) < q.foreign) fail(`Only ${stock(t, branchId, q.code).toLocaleString('en-GB')} ${q.code} in stock.`)
   if (q.side === 'buy' && stock(t, branchId, 'GBP') < q.gbp) fail(`Only £${stock(t, branchId, 'GBP').toLocaleString('en-GB')} in the GBP till.`)
+  if (!t.bureau.shifts?.length || t.bureau.shifts.some((s) => s.branchId === branchId && !s.closedAt) || d.noShiftCheck) { /* ok: no shift tracking yet, or a shift is open */ } else fail('Open a till shift for this branch before dealing (Bureau → Shifts).')
   let screening = null
   if (d.customerName?.trim()) screening = screenName(d.customerName, t.compliance.screeningThreshold)
   if (screening?.status === 'potential_match') fail(`Name matches a watchlist entry (${screening.score}%). Refer to compliance before completing.`)
@@ -278,4 +279,116 @@ export function createDeal(db, tenantId, d, actor, at = now()) {
       : [{ account: till, debit: book }, { account: gbpTill, credit: q.gbp }, margin >= 0 ? { account: 'inc_bureau', credit: margin } : { account: 'inc_bureau', debit: -margin }] })
   audit(db, { tenantId, actor, action: `Bureau deal ${deal.ref}: ${q.side} ${q.foreign} ${q.code} for £${q.gbp}`, target: deal.customerName, at })
   return deal
+}
+
+/* ---------------- Products (Super Admin switches a product on/off for an MSB) ---------------- */
+export function setTenantProducts(db, tenantId, products, actor) {
+  const t = tenantOf(db, tenantId)
+  if (!products.length) fail('An MSB needs at least one product.')
+  t.products = products
+  const remitMods = ['transactions', 'payments', 'tracker']
+  let mods = t.modules.filter((m) => products.includes('remittance') || !remitMods.includes(m))
+  if (products.includes('remittance')) mods = [...new Set([...mods, ...remitMods])]
+  if (products.includes('bureau')) mods = [...new Set([...mods, 'bureau'])]; else mods = mods.filter((m) => m !== 'bureau')
+  t.modules = mods
+  if (products.includes('bureau') && !t.bureau.currencies?.length) t.bureau.currencies = Object.keys(CURRENCIES).filter((c) => CURRENCIES[c].cash).slice(0, 5)
+  audit(db, { tenantId, actor, action: `Products set to ${products.join(' + ')}`, target: '' })
+}
+
+/* ---------------- Bureau: cashier shifts ---------------- */
+export function openShift(db, tenantId, d, actor, at = now()) {
+  const t = tenantOf(db, tenantId)
+  if (t.bureau.shifts.some((s) => s.branchId === d.branchId && !s.closedAt)) fail('A shift is already open at this branch. Close it first.')
+  const counts = d.counts || {}
+  for (const [code, qty] of Object.entries(counts)) if (qty !== '' && qty !== null) stockMovement(db, tenantId, { kind: 'adjust', branchId: d.branchId, code, qty: +qty, note: 'Opening count' }, actor, at)
+  const s = { id: uid('shf'), branchId: d.branchId, cashier: actor, openedAt: at, closedAt: null, opening: { ...counts }, closing: null, dealsAtOpen: db.deals.filter((x) => x.tenantId === tenantId && x.branchId === d.branchId).length }
+  t.bureau.shifts.unshift(s)
+  audit(db, { tenantId, actor, action: 'Opened till shift', target: t.branches.find((b) => b.id === d.branchId)?.name, at })
+  return s
+}
+export function closeShift(db, tenantId, shiftId, counts, actor, at = now()) {
+  const t = tenantOf(db, tenantId)
+  const s = t.bureau.shifts.find((x) => x.id === shiftId) || fail('Shift not found')
+  if (s.closedAt) fail('Shift already closed.')
+  const variance = {}
+  for (const [code, qty] of Object.entries(counts || {})) {
+    if (qty === '' || qty === null) continue
+    variance[code] = +(+qty - stock(t, s.branchId, code)).toFixed(2)
+    stockMovement(db, tenantId, { kind: 'adjust', branchId: s.branchId, code, qty: +qty, note: `Closing count by ${actor}` }, actor, at)
+  }
+  s.closedAt = at; s.closing = { ...counts }; s.variance = variance; s.closedBy = actor
+  s.deals = db.deals.filter((x) => x.tenantId === tenantId && x.branchId === s.branchId && x.at >= s.openedAt && x.at <= at).length
+  audit(db, { tenantId, actor, action: 'Closed till shift', target: Object.entries(variance).filter(([, v]) => v).map(([c, v]) => `${c} ${v > 0 ? '+' : ''}${v}`).join(', ') || 'no variance', at })
+}
+
+/* ---------------- Bureau: wholesaler stock orders ---------------- */
+export function createStockOrder(db, tenantId, d, actor, at = now()) {
+  const t = tenantOf(db, tenantId)
+  if (!(+d.qty > 0)) fail('Enter a quantity.')
+  if (!(+d.gbpCost > 0)) fail('Enter the agreed GBP cost.')
+  const o = { id: uid('ord'), ref: `PO-${shortCode(5)}`, branchId: d.branchId, code: d.code, qty: +d.qty, gbpCost: +d.gbpCost, supplier: d.supplier || t.bureau.suppliers[0], status: 'ordered', createdAt: at, by: actor, expected: d.expected || '' }
+  t.bureau.orders.unshift(o)
+  audit(db, { tenantId, actor, action: `Ordered ${o.qty} ${o.code} from ${o.supplier}`, target: o.ref, at })
+  return o
+}
+export function receiveStockOrder(db, tenantId, orderId, actor, at = now()) {
+  const t = tenantOf(db, tenantId)
+  const o = t.bureau.orders.find((x) => x.id === orderId) || fail('Order not found')
+  if (o.status !== 'ordered') fail('This order is not outstanding.')
+  stockMovement(db, tenantId, { kind: 'buy_wholesale', branchId: o.branchId, code: o.code, qty: o.qty, gbpCost: o.gbpCost, supplier: o.supplier }, actor, at)
+  o.status = 'received'; o.receivedAt = at
+}
+export function cancelStockOrder(db, tenantId, orderId, actor) {
+  const t = tenantOf(db, tenantId)
+  const o = t.bureau.orders.find((x) => x.id === orderId) || fail('Order not found')
+  if (o.status !== 'ordered') fail('Only outstanding orders can be cancelled.')
+  o.status = 'cancelled'
+  audit(db, { tenantId, actor, action: 'Cancelled stock order', target: o.ref })
+}
+
+/* ---------------- Bureau: online reservations (click & collect) ---------------- */
+export function createReservation(db, tenantId, d, actor = 'Customer', at = now()) {
+  const t = tenantOf(db, tenantId)
+  const c = d.customerId ? db.customers.find((x) => x.id === d.customerId) : null
+  if (c && c.status === 'frozen') fail('This account is under review. Please contact us.')
+  const q = bdcQuote(t, d.side || 'sell', d.code, d.amount, d.by || 'foreign')
+  if (!q || !(q.gbp > 0)) fail('Enter an amount.')
+  const branchId = d.branchId || t.branches[0].id
+  if (q.side === 'sell' && stock(t, branchId, q.code) < q.foreign) fail(`We don't have ${q.foreign.toLocaleString('en-GB')} ${q.code} available at that branch right now. Try a smaller amount or another branch.`)
+  if (q.gbp >= t.bureau.idThreshold && !c) fail('Please sign in so we can verify your identity for an order this size.')
+  const r = { id: uid('rsv'), ref: `RSV-${shortCode(6)}`, tenantId, branchId, customerId: c?.id || null, customerName: c?.name || d.customerName || '', side: q.side, code: q.code, foreign: q.foreign, gbp: q.gbp, rate: q.rate, status: 'reserved', createdAt: at, expiresAt: at + (t.bureau.reservationHours || 24) * 3600000, dealId: null }
+  db.reservations.unshift(r)
+  audit(db, { tenantId, actor, action: `Reserved ${q.foreign} ${q.code} for collection`, target: r.ref, at })
+  return r
+}
+export function fulfilReservation(db, tenantId, rsvId, d, actor, at = now()) {
+  const r = db.reservations.find((x) => x.id === rsvId) || fail('Reservation not found')
+  if (r.status !== 'reserved') fail('This reservation is not open.')
+  if (at > r.expiresAt) { r.status = 'expired'; fail('This reservation has expired. Create a new deal at today\'s rate.') }
+  const t = tenantOf(db, tenantId)
+  const c = r.customerId && db.customers.find((x) => x.id === r.customerId)
+  const idDoc = c?.kyc.docs.find((x) => x.status === 'verified')
+  // Honour the reserved rate: temporarily place it on the board for this deal
+  const prev = t.bureau.board[r.code]
+  const b = boardRate(t, r.code)
+  t.bureau.board[r.code] = { buy: r.side === 'buy' ? r.rate : b.buy, sell: r.side === 'sell' ? r.rate : b.sell }
+  let deal
+  try { deal = createDeal(db, tenantId, { side: r.side, code: r.code, amount: r.foreign, by: 'foreign', branchId: r.branchId, customerName: r.customerName, idType: d.idType || idDoc?.type || '', idNumber: d.idNumber || (idDoc ? 'verified in app' : '') }, actor, at) }
+  finally { if (prev) t.bureau.board[r.code] = prev; else delete t.bureau.board[r.code] }
+  r.status = 'collected'; r.dealId = deal.id; r.collectedAt = at
+  return deal
+}
+export function cancelReservation(db, rsvId, actor) {
+  const r = db.reservations.find((x) => x.id === rsvId) || fail('Reservation not found')
+  if (r.status !== 'reserved') fail('This reservation is not open.')
+  r.status = 'cancelled'
+  audit(db, { tenantId: r.tenantId, actor, action: 'Cancelled reservation', target: r.ref })
+}
+export function expireReservations(db) {
+  for (const r of db.reservations) if (r.status === 'reserved' && Date.now() > r.expiresAt) r.status = 'expired'
+}
+export function setSuppliers(db, tenantId, list, actor) {
+  const t = tenantOf(db, tenantId)
+  t.bureau.suppliers = list.map((x) => x.trim()).filter(Boolean)
+  audit(db, { tenantId, actor, action: 'Updated wholesalers', target: '' })
 }

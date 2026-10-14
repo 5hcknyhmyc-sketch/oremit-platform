@@ -30,9 +30,9 @@ export const useStore = create(
     }),
     {
       name: 'coremit-demo',
-      version: 3,
+      version: 4,
       // Old browser data from an earlier build is replaced with a fresh seed.
-      migrate: (state, version) => (version < 3 || !state?.db?.platform ? { db: buildSeed(), session: null, customerSessions: {} } : state),
+      migrate: (state, version) => (version < 4 || !state?.db?.reservations ? { db: buildSeed(), session: null, customerSessions: {} } : state),
       onRehydrateStorage: () => (state) => { if (state?.db?.platform) syncFromPlatform(state.db.platform) },
       partialize: (s) => ({ db: s.db, session: s.session, customerSessions: s.customerSessions }),
     },

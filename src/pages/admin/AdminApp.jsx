@@ -5,7 +5,7 @@ import { useStore, act } from '../../store'
 import TopBar from '../../components/TopBar'
 import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal, Field, Toggle } from '../../components/ui'
 import * as E from '../../lib/engine'
-import { PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM, MODULES } from '../../lib/reference'
+import { PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM, MODULES, PRODUCTS } from '../../lib/reference'
 import * as M from '../../lib/modules'
 import PlatformSettings from './PlatformSettings'
 import { gbp, gbp2, fmtDate, DAY, ago } from '../../lib/util'
@@ -59,19 +59,21 @@ function InviteBox() {
   const db = useStore((s) => s.db)
   const [open, setOpen] = useState(false)
   const [label, setLabel] = useState('')
+  const [products, setProducts] = useState(['remittance'])
   const [last, setLast] = useState(null)
-  const create = () => { const inv = act((d) => { const i = E.createInvite(d, 'Zaland Shah'); i.label = label.trim(); return i }, 'Onboarding link created'); if (inv) { setLast(inv); setOpen(false); setLabel('') } }
+  const create = () => { if (!products.length) return useStore.getState().notify('Choose at least one product', 'err'); const inv = act((d) => E.createInvite(d, 'Zaland Shah', label.trim(), products), 'Onboarding link created'); if (inv) { setLast(inv); setOpen(false); setLabel('') } }
   const url = (inv) => `${location.origin}/onboard/${inv.token}`
   const pending = db.invites.filter((i) => !i.usedBy && i.expiresAt > Date.now())
   return (
-    <Panel title="Onboard a new MSB" actions={<button className="btn pri sm" onClick={() => setOpen(true)}><Plus />Create onboarding link</button>}>
+    <Panel title="Onboard a new business" actions={<button className="btn pri sm" onClick={() => setOpen(true)}><Plus />Create onboarding link</button>}>
       <div className="panel-b stack-s">
-        {last && <div className="linkbox"><code>{url(last)}</code><button className="btn sm" onClick={() => navigator.clipboard?.writeText(url(last))}><Copy />Copy</button><Link className="btn sm" to={`/onboard/${last.token}`}><ExternalLink />Open as the MSB</Link></div>}
-        <p className="muted small">Send the MSB one link. They enter their business, brand, corridors, partners and compliance settings; their portal and app are generated in minutes. You approve before real money moves.</p>
-        {pending.length > 0 && <div className="list" style={{ borderTop: '1px solid var(--line)' }}>{pending.map((i) => <div className="li" key={i.token} style={{ padding: '8px 0' }}><div className="grow"><b>{i.label || 'Unnamed link'}</b><small>Sent {fmtDate(i.createdAt, false)} · expires {fmtDate(i.expiresAt, false)}</small></div><Link className="btn sm" to={`/onboard/${i.token}`}>Open</Link></div>)}</div>}
+        {last && <div className="linkbox"><span className="tag">{last.products.map((p) => PRODUCTS.find((x) => x.id === p)?.label).join(' + ')}</span><code>{url(last)}</code><button className="btn sm" onClick={() => navigator.clipboard?.writeText(url(last))}><Copy />Copy</button><Link className="btn sm" to={`/onboard/${last.token}`}><ExternalLink />Open as the MSB</Link></div>}
+        <p className="muted small">One link per business. Choose what they're getting: money remittance, bureau de change, or both. The wizard only asks for what that product needs, and their portal and app are generated when they finish. You approve before they go live.</p>
+        {pending.length > 0 && <div className="list" style={{ borderTop: '1px solid var(--line)' }}>{pending.map((i) => <div className="li" key={i.token} style={{ padding: '8px 0' }}><div className="grow"><b>{i.label || 'Unnamed link'} <span className="tag">{(i.products || ['remittance']).map((p) => PRODUCTS.find((x) => x.id === p)?.label).join(' + ')}</span></b><small>Sent {fmtDate(i.createdAt, false)} · expires {fmtDate(i.expiresAt, false)}</small></div><Link className="btn sm" to={`/onboard/${i.token}`}>Open</Link></div>)}</div>}
       </div>
       {open && <Modal title="New onboarding link" onClose={() => setOpen(false)} footer={<><button className="btn" onClick={() => setOpen(false)}>Cancel</button><button className="btn pri" onClick={create}>Create link</button></>}>
-        <div className="field"><label htmlFor="inv-l">MSB name (for your records)</label><input id="inv-l" className="inp" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Barking Money Express" autoFocus /></div>
+        <div className="field"><label htmlFor="inv-l">Business name (for your records)</label><input id="inv-l" className="inp" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Barking Money Express" autoFocus /></div>
+        <div className="field"><span className="lbl">Product</span><div className="checks">{PRODUCTS.map((p) => <label key={p.id} className="check"><input type="checkbox" checked={products.includes(p.id)} onChange={(e) => setProducts(e.target.checked ? [...products, p.id] : products.filter((x) => x !== p.id))} /><span>{p.label}<small>{p.desc}</small></span></label>)}</div></div>
         <p className="muted small">Single use, expires in 7 days.</p>
       </Modal>}
     </Panel>
@@ -88,7 +90,7 @@ function Overview() {
     <>
       <PageHead title="Platform overview" sub="Every MSB running on CoRemit · last 30 days" />
       <div className="kpis">
-        <Kpi label="Live MSBs" value={live.length} sub={`${db.tenants.length} on the platform`} tone="good" to="/admin/msbs" />
+        <Kpi label="Live businesses" value={live.length} sub={`${live.filter((t) => t.products.includes('remittance')).length} remittance · ${live.filter((t) => t.products.includes('bureau')).length} bureau de change`} tone="good" to="/admin/msbs" />
         <Kpi label="Awaiting approval" value={review.length} sub={review.length ? 'Check KYB before go-live' : 'Nothing waiting'} tone={review.length ? 'warn' : ''} to="/admin/approvals" />
         <Kpi label="Platform volume" value={gbp(vol)} sub={`${db.transactions.filter((x) => x.status === 'paid' && Date.now() - x.createdAt < 30 * DAY).length} paid transfers`} />
         <Kpi label="Avg. setup time" value={`${Math.floor(avg / 60)}m ${String(Math.round(avg % 60)).padStart(2, '0')}s`} sub="Target: under 15 minutes" />
@@ -110,18 +112,18 @@ function Msbs() {
   const rows = [...db.tenants.map((t) => ({ t })), ...db.invites.filter((i) => !i.usedBy).map((i) => ({ inv: i }))]
   return (
     <>
-      <PageHead title="MSBs" sub="Every business on the platform, each with its own domain, brand and data." />
+      <PageHead title="MSBs & bureaux" sub="Every business on the platform, each with its own domain, brand and data. Switch products on or off per business." />
       <InviteBox />
       <Panel>
         <div className="tbl-wrap"><table>
           <thead><tr><th>MSB</th><th>Status</th><th>Domain</th><th>FCA FRN</th><th className="r">30-day volume</th><th>Setup</th><th></th></tr></thead>
           <tbody>{rows.map(({ t, inv }) => t ? (
-            <tr key={t.id}><td><div className="cell-t"><Logo t={t} /><div><b>{t.name}</b><small>{t.liveAt ? `Live since ${fmtDate(t.liveAt, false)}` : `Submitted ${fmtDate(t.createdAt, false)}`}</small></div></div></td><td>{statusPill(t.status)}</td>
-              <td className="mono small">{t.slug}.coremit.app{t.domain && <><br /><span className="muted">{t.domain}</span></>}</td><td className="mono">{t.frn || '—'}</td><td className="r num">{t.status === 'live' ? gbp(vol30(db, t)) : '—'}</td><td className="mono">{setup(t)}</td>
+            <tr key={t.id}><td><div className="cell-t"><Logo t={t} /><div><b>{t.name}</b> {t.products.map((p) => <span key={p} className="tag" style={{ marginLeft: 4 }}>{p === 'bureau' ? 'Bureau' : 'Remittance'}</span>)}<small>{t.liveAt ? `Live since ${fmtDate(t.liveAt, false)}` : `Submitted ${fmtDate(t.createdAt, false)}`} · {t.plan}</small></div></div></td><td>{statusPill(t.status)}</td>
+              <td className="mono small">{t.slug}.{PLATFORM.domain}{t.domain && <><br /><span className="muted">{t.domain}</span></>}</td><td className="mono">{t.frn || '—'}</td><td className="r num">{t.status === 'live' ? gbp(vol30(db, t)) : '—'}</td><td className="mono">{setup(t)}</td>
               <td><div className="row" style={{ justifyContent: 'flex-end' }}>
                 {t.status === 'review' && <Link className="btn sm pri" to="/admin/approvals">Review</Link>}
                 <button className="btn sm" onClick={() => imp(t)}>Open admin</button>
-                <button className="btn sm" onClick={() => setMods(t)}>Modules</button>
+                <button className="btn sm" onClick={() => setMods(t)}>Products & modules</button>
                 <Link className="btn sm" to={`/app/${t.slug}`}>View app</Link>
                 {t.status === 'live' && <button className="btn sm danger" onClick={() => act((d) => E.setTenantStatus(d, t.id, 'suspended', 'Zaland Shah'), `${t.name} suspended`)}>Suspend</button>}
                 {t.status === 'suspended' && <button className="btn sm" onClick={() => act((d) => E.setTenantStatus(d, t.id, 'live', 'Zaland Shah'), `${t.name} reactivated`)}>Reactivate</button>}
@@ -133,9 +135,10 @@ function Msbs() {
         </table></div>
       </Panel>
       {mods && (() => { const t = db.tenants.find((x) => x.id === mods.id); const plan = PLANS.find((x) => x.id === t.plan); return (
-        <Modal title={`Modules for ${t.name}`} onClose={() => setMods(null)}>
+        <Modal title={`Products & modules for ${t.name}`} onClose={() => setMods(null)}>
+          <div className="field"><span className="lbl">Products</span><div className="checks">{PRODUCTS.map((p) => <label key={p.id} className="check"><input type="checkbox" checked={t.products.includes(p.id)} onChange={(e) => act((d) => M.setTenantProducts(d, t.id, e.target.checked ? [...t.products, p.id] : t.products.filter((x) => x !== p.id), 'Zaland Shah'), e.target.checked ? `${p.label} switched on for ${t.name}` : `${p.label} switched off`)} /><span>{p.label}<small>{p.desc}</small></span></label>)}</div></div>
           <p className="muted small">Plan <b>{t.plan}</b>. Modules outside the plan can still be switched on here as an add-on.</p>
-          <div className="list">{MODULES.filter((m) => !m.core).map((m) => <div className="li" key={m.id}><div className="grow"><b>{m.label}</b><small>{m.desc}{plan?.modules.includes(m.id) ? ' · in plan' : ' · add-on'}</small></div><Toggle on={t.modules.includes(m.id)} onChange={() => act((d) => M.setTenantModules(d, t.id, t.modules.includes(m.id) ? t.modules.filter((x) => x !== m.id) : [...t.modules, m.id], 'Zaland Shah'))} label={m.label} /></div>)}</div>
+          <div className="list">{MODULES.filter((m) => !m.core && m.id !== 'bureau' && !['transactions', 'payments'].includes(m.id)).map((m) => <div className="li" key={m.id}><div className="grow"><b>{m.label}</b><small>{m.desc}{plan?.modules.includes(m.id) ? ' · in plan' : ' · add-on'}</small></div><Toggle on={t.modules.includes(m.id)} onChange={() => act((d) => M.setTenantModules(d, t.id, t.modules.includes(m.id) ? t.modules.filter((x) => x !== m.id) : [...t.modules, m.id], 'Zaland Shah'))} label={m.label} /></div>)}</div>
         </Modal>) })()}
     </>
   )
@@ -151,7 +154,7 @@ function Approvals() {
       {rev.length ? rev.map((t) => {
         const all = E.APPROVAL_CHECKS.every(([k]) => t.checks[k])
         return (
-          <Panel key={t.id} title={<div className="cell-t"><Logo t={t} /><div><h2>{t.name}</h2><small className="muted mono">FRN {t.frn} · MLR {t.mlr} · set up in {setup(t)} · {t.email}</small></div></div>} actions={<><Link className="btn sm" to={`/app/${t.slug}`}>Preview app</Link><button className="btn pri" disabled={!all} onClick={() => act((d) => E.setTenantStatus(d, t.id, 'live', 'Zaland Shah'), `${t.name} is live`)}>Approve & go live</button></>}>
+          <Panel key={t.id} title={<div className="cell-t"><Logo t={t} /><div><h2>{t.name}</h2><small className="muted mono">{t.products.map((p) => (p === 'bureau' ? 'Bureau de change' : 'Remittance')).join(' + ')} · {t.frn ? `FRN ${t.frn} · ` : ''}MLR {t.mlr} · set up in {setup(t)} · {t.email}</small></div></div>} actions={<><Link className="btn sm" to={`/app/${t.slug}`}>Preview app</Link><button className="btn pri" disabled={!all} onClick={() => act((d) => E.setTenantStatus(d, t.id, 'live', 'Zaland Shah'), `${t.name} is live`)}>Approve & go live</button></>}>
             <div className="panel-b stack">
               <div className="checks">{E.APPROVAL_CHECKS.map(([k, l]) => <label key={k} className="check"><input type="checkbox" checked={!!t.checks[k]} onChange={(e) => toggle(t, k, e.target.checked)} /><span>{l}<small>{['reg', 'kyc', 'payout', 'domain'].includes(k) ? 'Set automatically from onboarding' : 'Manual check'}</small></span></label>)}</div>
               <div className="muted small">Corridors: <b>{t.corridors.map((c) => 'GBP → ' + c.cur).join(', ')}</b> · KYC: {t.integrations.kyc.provider === 'custom' ? `custom (${t.integrations.kyc.status})` : KYC_PROVIDERS.find((k) => k.id === t.integrations.kyc.provider)?.name} · Payout: {t.partners.map((p) => partnersOf(db).find((x) => x.id === p)?.name).join(', ') || 'none yet'} · Pay-in: {t.integrations.payin.map((b) => PAYIN_BANKS.find((x) => x.id === b)?.name).join(', ')} · MLRO: {t.compliance.mlro || '—'}</div>

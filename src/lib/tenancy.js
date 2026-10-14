@@ -2,7 +2,7 @@
 //   northgate.coremit.app          → tenant with slug "northgate"
 //   send.northgateremit.co.uk      → tenant whose custom domain matches
 // Set VITE_PLATFORM_DOMAIN (e.g. "coremit.app") in Netlify to turn this on. Netlify preview URLs are ignored.
-const PLATFORM = import.meta.env.VITE_PLATFORM_DOMAIN || 'coremit.app'
+const PLATFORM = import.meta.env.VITE_PLATFORM_DOMAIN || 'thefxsoft.app'
 
 export function resolveHostTenant(db, host = typeof location !== 'undefined' ? location.hostname : '') {
   if (!host || host === 'localhost' || host.endsWith('.netlify.app')) return null
