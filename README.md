@@ -12,7 +12,8 @@ One codebase that every money service business (MSB) and bureau de change runs o
 | Super Admin | `/admin` | TheFXSoft: MSB list, approvals with KYB checklist, onboarding links, payout network, billing, audit log, "open as MSB" |
 | MSB portal | `/portal` | MSB admin + staff: dashboard, transactions, payments-in matching, customers & KYC, compliance (cases, rules, auto-release, screening, SARs, policies), treasury, reports, settings (branding, corridors, roles, domain) |
 | Customer app | `/app/<slug>` | senders: sign-up, KYC, recipients, full send flow with fraud check, bank-transfer payment, status tracking |
-| Onboarding link | `/onboard/<token>` | a new MSB: 6-step setup with live app preview and timer |
+| Get started (public) | `/get-started` (`/get-started/bureau` preselects bureau) | a new MSB: choose remittance / bureau / both, then a 10-step self-service setup with live app, web-portal and admin previews and a 15-minute timer |
+| Onboarding link (invited) | `/onboard/<token>` | same wizard, opened from a private link created in Super Admin |
 
 ### Transaction lifecycle
 `Awaiting funds → Funds received → (rules run) → On hold / Ready to release → Sent to partner → Paid`
@@ -27,10 +28,14 @@ Rejected transfers are refunded; every step is on the transfer's timeline and in
 - Risk scoring per customer with manual override.
 - Policy templates (AML/CTF, risk assessment, CDD, privacy notice, fraud guide, complaints) with versions and MLRO approval.
 
+### Self-service onboarding (`src/pages/onboard/Onboard.jsx`)
+1. Business details → 2. channels (web portal + app / app only / admin only) → 3. design (logo, colours, font, text size, roundness, light/dark, navigation — one design drives web portal **and** app) → 4. KYC provider (Didit / Shufti Pro: log in to your own account in a provider window and authorise; or name another provider at extra cost) → 5. countries + payout partner (Daytona Capital Management / Hello Paisa, same connect flow; or request another) → 6. payment processor (Fena open banking built in; other processors are requests: ~1 week standard, urgent and very urgent at extra cost) → 7. compliance release mode (automatic with AI review against uploaded AML/TM policies, or manual release by the compliance officer) → 8. customer email templates → 9. admin portal look → 10. domain, summary, declaration, launch.
+Every provider step carries the disclaimer that the MSB needs its own account and agreement with the provider; TheFXSoft supplies the IT service only. Every tenant surface carries "Made by TheFXSoft Limited".
+
 ### Integrations (chosen at sign-up, changeable in Settings → Integrations)
 - **KYC**: Didit or Shufti Pro included; custom provider quoted separately.
 - **Payout**: Daytona Capital Management included; custom partners quoted separately (Super Admin → Integration requests: quote → MSB accepts → mark live).
-- **Pay-in**: ClearBank, Revolut Business, EM Bank, Secure Trading, Bombora Transact365 included.
+- **Pay-in**: Fena (open banking), ClearBank, Revolut Business, EM Bank, Secure Trading, Bombora Transact365 included.
 
 ### Ledger (Treasury)
 Double-entry journals per MSB (`db.journals`, `tenant.accounts`): customer payments, payouts (prefund, fee income, FX income), refunds and top-ups post automatically; expenses and transfers between accounts are manual. Trial balance and CSV export.
