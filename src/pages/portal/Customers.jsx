@@ -6,6 +6,7 @@ import { Panel, PageHead, Modal, Field, Empty, Pill, KycPill, RiskPill, ScreenPi
 import { TxTable } from './Transactions'
 import { act } from '../../store'
 import * as E from '../../lib/engine'
+import * as G from '../../lib/growth'
 import { riskLevel } from '../../lib/rules'
 import { DOC_TYPES, OCCUPATIONS, CURRENCIES, RELATIONSHIPS } from '../../lib/reference'
 import { gbp, fmtDate, ageFrom, initials } from '../../lib/util'
@@ -80,7 +81,7 @@ export function CustomerDetail() {
         <Panel title="Identity documents" actions={<button className="btn sm" onClick={() => setAddDoc(true)}>Add document</button>}>
           <div className="list">
             {c.kyc.docs.length ? c.kyc.docs.map((d) => (
-              <div className="li" key={d.id}><div className="grow"><b>{d.type}</b><small>Uploaded {fmtDate(d.uploadedAt)}{d.expiry ? ` · expires ${d.expiry}` : ''}{d.reviewedBy ? ` · reviewed by ${d.reviewedBy}` : ''}</small></div>
+              <div className="li" key={d.id}><div className="grow"><b>{d.type}</b><small>Uploaded {fmtDate(d.uploadedAt)}{d.expiry ? ` · expires ${d.expiry}` : ''}{d.expiry && (new Date(d.expiry).getTime() - Date.now()) < 60 * 86400000 ? <> · <Pill tone={new Date(d.expiry).getTime() < Date.now() ? 'crit' : 'warn'}>{new Date(d.expiry).getTime() < Date.now() ? 'Expired' : 'Expiring soon'}</Pill></> : ''}{d.reviewedBy ? ` · reviewed by ${d.reviewedBy}` : ''}</small></div>
                 {d.status === 'pending' && canDecide ? <div className="row"><button className="btn sm good" onClick={() => act((dd) => E.reviewDocument(dd, c.id, d.id, true, actor), 'Document verified')}>Verify</button><button className="btn sm danger" onClick={() => act((dd) => E.reviewDocument(dd, c.id, d.id, false, actor), 'Document rejected')}>Reject</button></div>
                   : <Pill tone={{ verified: 'good', pending: 'warn', rejected: 'crit' }[d.status]}>{d.status}</Pill>}
               </div>
@@ -95,9 +96,11 @@ export function CustomerDetail() {
         </Panel>
       </div>
       <Panel title="Recipients" actions={<button className="btn sm" onClick={() => setAddRec(true)}>Add recipient</button>}>
-        {recs.length ? <div className="tbl-wrap"><table><thead><tr><th>Name</th><th>Country</th><th>Method</th><th>Account</th><th>Relationship</th><th>Screening</th></tr></thead>
-          <tbody>{recs.map((r) => <tr key={r.id}><td><b>{r.name}</b></td><td>{CURRENCIES[r.cur]?.country} ({r.cur})</td><td>{r.method}</td><td className="mono small">{r.bank} {r.account}</td><td>{r.relationship}</td><td><ScreenPill s={r.screening} /></td></tr>)}</tbody></table></div> : <Empty>No recipients yet.</Empty>}
+        {recs.length ? <div className="tbl-wrap"><table><thead><tr><th>Name</th><th>Country</th><th>Method</th><th>Account</th><th>Relationship</th><th>Name check</th><th>Screening</th></tr></thead>
+          <tbody>{recs.map((r) => <tr key={r.id}><td><b>{r.name}</b></td><td>{CURRENCIES[r.cur]?.country} ({r.cur})</td><td>{r.method}</td><td className="mono small">{r.bank} {r.account}</td><td>{r.relationship}</td><td>{r.nameCheck ? <span><Pill tone={G.NAME_CHECK[r.nameCheck.status].tone}>{G.NAME_CHECK[r.nameCheck.status].label}</Pill>{['close', 'no_match'].includes(r.nameCheck.status) && <small className="muted"> · holder: {r.nameCheck.accountName}</small>}</span> : <button className="btn sm" onClick={() => act((d) => G.checkRecipientName(d, r.id), 'Checked with partner')}>Check name</button>}</td><td><ScreenPill s={r.screening} /></td></tr>)}</tbody></table></div> : <Empty>No recipients yet.</Empty>}
       </Panel>
+      {(db.schedules || []).some((x) => x.customerId === c.id) && <Panel title="Standing transfers"><div className="list">{(db.schedules || []).filter((x) => x.customerId === c.id).map((x) => <div className="li" key={x.id}><div className="grow"><b>{gbp(x.sendAmount)} to {db.recipients.find((r) => r.id === x.recipientId)?.name}</b><small>{G.FREQ[x.frequency]} · next {fmtDate(x.nextAt, false)} · {x.runs} sent{x.lastError ? ` · last run failed: ${x.lastError}` : ''}</small></div><Pill tone={x.status === 'active' ? 'good' : 'mute'}>{x.status}</Pill></div>)}</div></Panel>}
+      {(db.tickets || []).some((k) => k.customerId === c.id) && <Panel title="Support queries"><div className="list">{(db.tickets || []).filter((k) => k.customerId === c.id).map((k) => <Link className="li" to="/portal/support" key={k.id}><div className="grow"><b>{k.subject}</b><small>{k.ref} · {fmtDate(k.updatedAt)}</small></div><Pill tone={{ open: 'warn', answered: 'good', closed: 'mute' }[k.status]}>{k.status}</Pill></Link>)}</div></Panel>}
       <Panel title={`Transfers (${tx.length})`}><TxTable rows={tx} /></Panel>
       {cases.length > 0 && <Panel title="Compliance cases"><div className="list">{cases.map((k) => <Link key={k.id} className="li" to={`/portal/compliance/cases/${k.id}`}><div className="grow"><b>{k.ref} · {k.title}</b><small>{fmtDate(k.createdAt)}{k.outcome ? ` · ${k.outcome}` : ''}</small></div><CasePill s={k.status} /></Link>)}</div></Panel>}
       {addRec && <NewRecipient c={c} onClose={() => setAddRec(false)} />}

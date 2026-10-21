@@ -7,6 +7,7 @@ import { gbp, DAY, ago } from '../../lib/util'
 import { partnerById } from '../../lib/reference'
 import { riskLevel } from '../../lib/rules'
 import * as M from '../../lib/modules'
+import * as G from '../../lib/growth'
 import { gbp2 } from '../../lib/util'
 import { CURRENCIES } from '../../lib/reference'
 
@@ -30,7 +31,13 @@ export default function Dashboard() {
   })
   const mx = Math.max(...days, 1)
 
+  const openTickets = (db.tickets || []).filter((k) => k.tenantId === t.id && k.status === 'open')
+  const expiring = G.expiringDocs(db, t.id, 30)
+  const dueSched = (db.schedules || []).filter((s) => s.tenantId === t.id && s.status === 'active' && s.nextAt < Date.now() + 3 * DAY)
   const attention = [
+    ...openTickets.map((k) => ({ sev: 'low', title: `Customer query: ${k.subject}`, sub: `${db.customers.find((c) => c.id === k.customerId)?.name} · ${k.ref} · waiting ${ago(k.updatedAt)}`, to: '/portal/support', need: 'support' })),
+    ...expiring.map((e) => ({ sev: e.days < 0 ? 'medium' : 'low', title: `${e.customer.name}: ${e.doc.type} ${e.days < 0 ? 'expired' : `expires in ${e.days} days`}`, sub: 'Customer has been asked in the app to upload a new one', to: `/portal/customers/${e.customer.id}`, need: 'customers' })),
+    ...dueSched.map((s) => ({ sev: 'low', title: `Standing transfer due: ${gbp2(s.sendAmount)} to ${db.recipients.find((r) => r.id === s.recipientId)?.name}`, sub: `${db.customers.find((c) => c.id === s.customerId)?.name} · ${G.FREQ[s.frequency]} · ${new Date(s.nextAt).toLocaleDateString('en-GB')}`, to: `/portal/customers/${s.customerId}`, need: 'customers' })),
     ...cases.map((k) => ({ sev: k.severity, title: `${k.ref} · ${k.title}`, sub: `${db.customers.find((c) => c.id === k.customerId)?.name} · ${k.status === 'escalated' ? 'with MLRO' : 'opened ' + ago(k.createdAt)}`, to: `/portal/compliance/cases/${k.id}`, need: 'compliance' })),
     ...by('pending_release').map((x) => ({ sev: 'medium', title: `${x.ref} ready to release`, sub: x.note || `£${x.sendAmount} · above auto-release limit`, to: `/portal/transactions?status=pending_release`, need: 'transactions' })),
     ...unmatched.map((p) => ({ sev: 'medium', title: `Unmatched payment £${p.amount.toFixed(2)}`, sub: `From ${p.payer} · reference “${p.reference || 'none'}”`, to: '/portal/payments', need: 'payments' })),

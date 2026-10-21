@@ -3,6 +3,7 @@ import * as E from './engine'
 import { withSeed, pick, between, random, DAY, now, uid } from './util'
 import { PURPOSES, SOURCES_OF_FUNDS, OCCUPATIONS, DEFAULT_PLATFORM, syncFromPlatform } from './reference'
 import * as M from './modules'
+import * as G from './growth'
 
 const FIRST = ['Bilal', 'Chiamaka', 'Priya', 'Rafiq', 'Maria', 'Kwame', 'Ayesha', 'Tunde', 'Sanjay', 'Grace', 'Imran', 'Fatima', 'Usman', 'Ngozi', 'Arjun', 'Shirin', 'Kofi', 'Rosa', 'Hamza', 'Joy', 'Tariq', 'Mehwish', 'Emeka', 'Divya']
 const LAST = ['Ahmed', 'Okafor', 'Nair', 'Hossain', 'Santos', 'Mensah', 'Khan', 'Bakare', 'Patel', 'Wanjiru', 'Qureshi', 'Begum', 'Malik', 'Eze', 'Sharma', 'Rahman', 'Asante', 'Reyes', 'Butt', 'Adeyemi', 'Mirza', 'Chaudhry', 'Obi', 'Iyer']
@@ -113,7 +114,7 @@ export function buildSeed() {
   return withSeed('coremit-demo-v1', () => {
     const platform = structuredClone(DEFAULT_PLATFORM); platform.rateHistory = []
     syncFromPlatform(platform)
-    const db = { version: 4, platform, deals: [], reservations: [], tenants: [], customers: [], recipients: [], transactions: [], payIns: [], cases: [], sars: [], audit: [], invites: [], counters: {}, journals: [], customPartners: [], integrationRequests: [] }
+    const db = { version: 4, platform, deals: [], reservations: [], tenants: [], customers: [], recipients: [], transactions: [], payIns: [], cases: [], sars: [], audit: [], invites: [], counters: {}, journals: [], customPartners: [], integrationRequests: [], rateAlerts: [], schedules: [], tickets: [], notifications: [] }
     const lagos = { id: 'custom_lagos', name: 'Lagos Settle (custom)', cur: ['NGN', 'GHS'], methods: ['Bank', 'Mobile wallet'], included: false, tenantId: 'sahara', status: 'live' }
     db.customPartners.push(lagos)
     const ng = E.makeTenant({
@@ -237,6 +238,19 @@ export function buildSeed() {
     M.openShift(db, ng.id, { branchId: 'main', counts: {} }, 'Sana Mirza', now() - 8 * 3600000)
     M.createReservation(db, ng.id, { customerId: db.customers.find((c) => c.tenantId === ng.id).id, side: 'sell', code: 'EUR', amount: 400, by: 'foreign', branchId: 'main' }, 'Customer', now() - 2 * 3600000)
     M.createReservation(db, bx.id, { customerName: 'Walk-in (web)', side: 'sell', code: 'USD', amount: 300, by: 'foreign', branchId: 'main' }, 'Customer', now() - 40 * 60000)
+    // Growth features on CoRemit: promo codes, a rate alert, a monthly standing transfer, support tickets, an expiring passport
+    G.addPromo(db, ng.id, { code: 'WELCOME', type: 'free_fee', firstOnly: true }, 'Owner', now() - 20 * DAY)
+    G.addPromo(db, ng.id, { code: 'EID10', type: 'pct_off', value: 10, minAmount: 100, maxUses: 500 }, 'Owner', now() - 5 * DAY)
+    G.addPromo(db, ng.id, { code: 'RATE1', type: 'bonus_rate', value: 1, minAmount: 500, expiresAt: now() + 10 * DAY }, 'Owner', now() - 2 * DAY)
+    const ngc = db.customers.filter((c) => c.tenantId === ng.id && c.kyc.status === 'verified')
+    const c0 = ngc[0], c1 = ngc[1] || ngc[0]
+    const r0 = db.recipients.find((r) => r.customerId === c0.id)
+    if (r0) { G.checkRecipientName(db, r0.id); G.addRateAlert(db, ng.id, c0.id, r0.cur, Math.ceil(G.customerRate(ng, r0.cur) * 1.02), now() - 3 * DAY); G.createSchedule(db, { tenantId: ng.id, customerId: c0.id, recipientId: r0.id, sendAmount: 200, frequency: 'monthly', firstAt: now() + 9 * DAY, purpose: 'Family support' }, 'Customer', now() - 20 * DAY) }
+    const tx0 = db.transactions.find((x) => x.tenantId === ng.id && x.customerId === c1.id)
+    const tk = G.openTicket(db, { tenantId: ng.id, customerId: c1.id, txId: tx0?.id || null, subject: 'My recipient has not received the money yet', text: 'I sent it yesterday afternoon and the app says on its way. Can you check with the partner?' }, 'Customer', now() - 6 * 3600000)
+    G.replyTicket(db, tk.id, 'Thanks for your patience. The payout partner has confirmed it will be credited within the hour. We will update you here.', 'Daniel Reid', true, now() - 4 * 3600000)
+    G.openTicket(db, { tenantId: ng.id, customerId: c0.id, subject: 'Can I increase my daily limit?', text: 'I need to send £12,000 for a property deposit next week.' }, 'Customer', now() - 50 * 60000)
+    const pd = c1.kyc.docs.find((d) => d.expiry); if (pd) pd.expiry = new Date(now() + 21 * DAY).toISOString().slice(0, 10)
     db.audit.sort((a, b) => b.at - a.at)
     db.transactions.sort((a, b) => b.createdAt - a.createdAt)
     db.payIns.sort((a, b) => b.receivedAt - a.receivedAt)

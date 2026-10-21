@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Save, Plus, Mail, Smartphone, Monitor } from 'lucide-react'
 import { usePortal } from './PortalApp'
-import { Panel, PageHead, Tabs, Field, Toggle, Modal, Pill } from '../../components/ui'
+import { Panel, PageHead, Tabs, Field, Toggle, Modal, Pill, Empty } from '../../components/ui'
 import { act, useStore } from '../../store'
 import * as E from '../../lib/engine'
 import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM } from '../../lib/reference'
@@ -11,6 +11,7 @@ import { AppPreview } from '../app/CustomerApp'
 import { WebPreview, AdminPreview } from '../onboard/Onboard'
 import { renderEmail, EMAIL_VARS, defaultEmails } from '../../lib/emails'
 import PricingTable, { DEFAULT_PRICING, PricingHint } from '../../components/PricingTable'
+import * as G from '../../lib/growth'
 import { uid, fmtDate } from '../../lib/util'
 
 const SWATCHES = ['#0E5E6F', '#1D5C4D', '#24409E', '#8C3B2E', '#5B2A86', '#1B2559', '#B4472A', '#2D3748']
@@ -19,11 +20,12 @@ export default function Settings() {
   return (
     <>
       <PageHead title="Settings" sub="Brand, corridors, team, domain and business details." />
-      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/emails', label: 'Emails' }, { to: '/portal/settings/admin', label: 'Admin portal' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/modules', label: 'Modules' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
+      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/promos', label: 'Promotions' }, { to: '/portal/settings/emails', label: 'Emails' }, { to: '/portal/settings/admin', label: 'Admin portal' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/modules', label: 'Modules' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
       <Routes>
         <Route index element={<Branding />} />
         <Route path="corridors" element={<Corridors />} />
         <Route path="integrations" element={<Integrations />} />
+        <Route path="promos" element={<Promos />} />
         <Route path="emails" element={<Emails />} />
         <Route path="admin" element={<AdminTheme />} />
         <Route path="team" element={<Team />} />
@@ -71,6 +73,38 @@ function Branding() {
         {tab === 'app' ? <div className="phone"><AppPreview t={preview} /></div> : <WebPreview t={preview} />}
         <span className="muted small mono">Live preview</span>
       </div>
+    </div>
+  )
+}
+
+const PROMO_TYPES = { free_fee: 'No fee', pct_off: '% off the fee', fixed_off: '£ off the fee', bonus_rate: 'Better rate (+% on the rate)' }
+function Promos() {
+  const { db, t, actor } = usePortal()
+  const [f, setF] = useState({ code: '', type: 'free_fee', value: '', firstOnly: false, minAmount: '', maxUses: '', expiresAt: '' })
+  const promos = t.promos || []
+  const used = (p) => db.transactions.filter((x) => x.tenantId === t.id && x.promo?.id === p.id)
+  const create = () => act((d) => G.addPromo(d, t.id, f, actor), 'Promo code live') && setF({ code: '', type: 'free_fee', value: '', firstOnly: false, minAmount: '', maxUses: '', expiresAt: '' })
+  const share = (p) => navigator.clipboard?.writeText(`Use code ${p.code} at ${t.brand.appName || t.name}: ${G.describePromo(p)}. ${location.origin}/app/${t.slug}`)
+  return (
+    <div className="grid2">
+      <Panel title="Promo codes">
+        {promos.length ? <div className="tbl-wrap"><table><thead><tr><th>Code</th><th>Offer</th><th className="r">Used</th><th className="r">Fees given away</th><th>Expires</th><th>Status</th><th /></tr></thead>
+          <tbody>{promos.map((p) => <tr key={p.id}><td className="mono"><b>{p.code}</b></td><td>{G.describePromo(p)}</td><td className="r num">{p.uses}{p.maxUses ? ` / ${p.maxUses}` : ''}</td><td className="r num">£{used(p).reduce((a, x) => a + (x.promo?.saved || 0), 0).toFixed(2)}</td><td>{p.expiresAt ? fmtDate(p.expiresAt, false) : '—'}</td><td><Pill tone={p.active ? 'good' : 'mute'}>{p.active ? 'Live' : 'Paused'}</Pill></td><td><div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn sm" onClick={() => share(p)}>Copy share text</button><button className="btn sm" onClick={() => act((d) => G.setPromoActive(d, t.id, p.id, !p.active, actor))}>{p.active ? 'Pause' : 'Resume'}</button></div></td></tr>)}</tbody></table></div> : <Empty>No promo codes yet. "First transfer free" is the one every competitor runs.</Empty>}
+      </Panel>
+      <Panel title="New code" pad>
+        <div className="stack">
+          <Field label="Code" id="pr-c" hint="Letters and numbers, 3–16 characters"><input id="pr-c" className="inp mono" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} /></Field>
+          <Field label="Offer" id="pr-t"><select id="pr-t" className="sel" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{Object.entries(PROMO_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+          {f.type !== 'free_fee' && <Field label={f.type === 'fixed_off' ? 'Amount off (£)' : 'Percent'} id="pr-v"><input id="pr-v" className="inp num" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} /></Field>}
+          <div className="form">
+            <Field label="Minimum transfer (£)" id="pr-m"><input id="pr-m" className="inp num" value={f.minAmount} onChange={(e) => setF({ ...f, minAmount: e.target.value })} /></Field>
+            <Field label="Max uses (blank = unlimited)" id="pr-u"><input id="pr-u" className="inp num" value={f.maxUses} onChange={(e) => setF({ ...f, maxUses: e.target.value })} /></Field>
+            <Field label="Expires" id="pr-e"><input id="pr-e" className="inp" type="date" value={f.expiresAt} onChange={(e) => setF({ ...f, expiresAt: e.target.value })} /></Field>
+          </div>
+          <label className="check"><input type="checkbox" checked={f.firstOnly} onChange={(e) => setF({ ...f, firstOnly: e.target.checked })} /><span>First transfer only<small>Great for acquisition campaigns and referrals</small></span></label>
+          <button className="btn pri" onClick={create} disabled={!f.code}>Create code</button>
+        </div>
+      </Panel>
     </div>
   )
 }

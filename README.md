@@ -35,6 +35,16 @@ Every provider step carries the disclaimer that the MSB needs its own account an
 ### Pricing per corridor (`corridorFee` in `src/lib/engine.js`)
 Each corridor has an FX margin and two fee bands split at a threshold: below it a fixed £ plus a % of the amount; at or above it another fixed £ plus % (default £0 + 0%, i.e. larger transfers pay only the FX margin). So "PKR: 2.5%", "BDT: £2 flat", or "under £100: £3 + 1%, £100+: no fee" are all one row. Set at onboarding, edited in Settings → Corridors & pricing.
 
+### Growth & service features (`src/lib/growth.js`)
+- **Promo codes** (Settings → Promotions): no fee / % off / £ off / better rate, first-transfer-only, min amount, max uses, expiry; applied at quote, savings reported.
+- **Rate alerts** + public shareable **rates page** (`/app/<slug>/rates`) with WhatsApp share text.
+- **Recipient name check** (Confirmation-of-Payee style) on save, badge in app and admin.
+- **Standing transfers**: weekly / fortnightly / monthly, created automatically and the customer is reminded to pay; cancel from Activity.
+- **Support inbox**: customers raise queries from Help; staff reply from the Support module; replies arrive as notifications.
+- **Document expiry** nudges in the app and Expiring/Expired pills plus dashboard items in admin.
+- **Notifications centre** in the app (bell with unread count).
+- **Plan selection** (Starter / Growth / Enterprise) in the wizard.
+
 ### Integrations (chosen at sign-up, changeable in Settings → Integrations)
 - **KYC**: Didit or Shufti Pro included; custom provider quoted separately.
 - **Payout**: Daytona Capital Management included; custom partners quoted separately (Super Admin → Integration requests: quote → MSB accepts → mark live).

@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, Landmark, Users, ShieldCheck, Wallet, BarChart3, Settings as Cog, Store, Building, Coins, Gift, Search, Code2 } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, Landmark, Users, ShieldCheck, Wallet, BarChart3, Settings as Cog, Store, Building, Coins, Gift, Search, Code2, LifeBuoy } from 'lucide-react'
 import { useStore } from '../../store'
 import { Logo, brandVars, MadeBy } from '../../components/ui'
 import { inkOn } from '../../lib/util'
@@ -22,9 +22,10 @@ import Bureau from './Bureau'
 import Rewards from './Rewards'
 import Developer from './Developer'
 import TrackerPage from './TrackerPage'
+import Support from './Support'
 
-const ICONS = { dashboard: LayoutDashboard, transactions: ArrowLeftRight, payments: Landmark, customers: Users, compliance: ShieldCheck, treasury: Wallet, reports: BarChart3, settings: Cog, agents: Store, corporate: Building, bureau: Coins, rewards: Gift, tracker: Search, developer: Code2 }
-const PATHS = Object.fromEntries(['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'agents', 'corporate', 'bureau', 'rewards', 'tracker', 'developer'].map((m) => [m, m === 'dashboard' ? '/portal' : `/portal/${m}`]))
+const ICONS = { dashboard: LayoutDashboard, transactions: ArrowLeftRight, payments: Landmark, customers: Users, compliance: ShieldCheck, treasury: Wallet, reports: BarChart3, settings: Cog, agents: Store, corporate: Building, bureau: Coins, rewards: Gift, tracker: Search, developer: Code2, support: LifeBuoy }
+const PATHS = Object.fromEntries(['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'agents', 'corporate', 'bureau', 'rewards', 'tracker', 'developer', 'support'].map((m) => [m, m === 'dashboard' ? '/portal' : `/portal/${m}`]))
 
 const Ctx = createContext(null)
 export const usePortal = () => useContext(Ctx)
@@ -46,7 +47,8 @@ export default function PortalApp() {
   }
   const openCases = db.cases.filter((k) => k.tenantId === t.id && k.status !== 'closed').length
   const unmatched = db.payIns.filter((p) => p.tenantId === t.id && p.status === 'unmatched').length
-  const counts = { compliance: openCases, payments: unmatched }
+  const openTickets = (db.tickets || []).filter((k) => k.tenantId === t.id && k.status === 'open').length
+  const counts = { compliance: openCases, payments: unmatched, support: openTickets }
   const first = MODULES.find((m) => allowed.includes(m.id))
   const guard = (m, el) => (allowed.includes(m) ? el : <NoAccess />)
 
@@ -87,6 +89,7 @@ export default function PortalApp() {
               <Route path="compliance/*" element={guard('compliance', <Compliance />)} />
               <Route path="treasury/*" element={guard('treasury', <Treasury />)} />
               <Route path="reports" element={guard('reports', <Reports />)} />
+              <Route path="support" element={guard('support', <Support />)} />
               <Route path="settings/*" element={guard('settings', <Settings />)} />
               <Route path="agents/*" element={guard('agents', <Agents />)} />
               <Route path="corporate/*" element={guard('corporate', <Corporate />)} />

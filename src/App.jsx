@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useStore } from './store'
 import { completePayout } from './lib/engine'
 import { expireReservations } from './lib/modules'
+import { runSchedules, checkRateAlerts } from './lib/growth'
 import { Toast } from './components/ui'
 import Login from './pages/Login'
 import AdminApp from './pages/admin/AdminApp'
@@ -18,7 +19,9 @@ function usePartnerSimulator() {
       const { db, run } = useStore.getState()
       const due = db.transactions.filter((t) => t.status === 'released' && Date.now() - t.updatedAt > 10000)
       const exp = db.reservations?.some((r) => r.status === 'reserved' && Date.now() > r.expiresAt)
-      if (due.length || exp) run((d) => { due.forEach((t) => completePayout(d, t.id)); expireReservations(d) })
+      const sched = (db.schedules || []).some((s) => s.status === 'active' && s.nextAt <= Date.now())
+      const alerts = (db.rateAlerts || []).some((a) => !a.triggeredAt)
+      if (due.length || exp || sched || alerts) run((d) => { due.forEach((t) => completePayout(d, t.id)); expireReservations(d); runSchedules(d); checkRateAlerts(d) })
     }, 4000)
     return () => clearInterval(h)
   }, [])
@@ -27,7 +30,7 @@ function usePartnerSimulator() {
 export default function App() {
   usePartnerSimulator()
   const db = useStore((s) => s.db)
-  useEffect(() => { if (!db.journals || !db.platform || !db.deals || !db.reservations || db.tenants.some((t) => !t.integrations || !t.modules || !t.products || !t.channels || !t.emailTemplates)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
+  useEffect(() => { if (!db.journals || !db.platform || !db.deals || !db.reservations || !db.tickets || db.tenants.some((t) => !t.integrations || !t.modules || !t.products || !t.channels || !t.emailTemplates)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
   // In production, a request to <slug>.coremit.app or an MSB's own domain opens its customer app directly.
   const hostTenant = resolveHostTenant(db)
   return (

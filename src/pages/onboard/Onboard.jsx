@@ -6,7 +6,7 @@ import { Panel, Field, Pill, Wordmark, Modal, MadeBy, brandVars } from '../../co
 import { AppPreview } from '../app/CustomerApp'
 import OnboardBureau from './OnboardBureau'
 import * as E from '../../lib/engine'
-import { CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, PLATFORM } from '../../lib/reference'
+import { CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, PLATFORM, PLANS } from '../../lib/reference'
 import { defaultEmails, renderEmail, EMAIL_VARS } from '../../lib/emails'
 import { gbp2, num, inkOn, initials } from '../../lib/util'
 import PricingTable, { DEFAULT_PRICING, PricingHint } from '../../components/PricingTable'
@@ -74,7 +74,7 @@ function RemitWizard({ inv, token }) {
   const [emailSel, setEmailSel] = useState('pay_instructions')
   const [d, setD] = useState({
     name: 'Thames Remit', legalName: 'Thames Remit Ltd', companyNumber: '12345678', address: '14 Station Road, Barking IG11 8DN', frn: '904551', mlr: 'XBML00000412093', ownerName: 'Hassan Ali', phone: '020 3000 0000', email: 'ops@thamesremit.co.uk',
-    channels: { portal: true, app: true },
+    channels: { portal: true, app: true }, plan: 'Starter',
     appName: 'Thames Remit', tagline: 'Send money home in minutes', color: '#1E7A5A', accent: '#F0B44C', font: 'Inter', fontSize: 'M', radius: 14, mode: 'light', nav: 'tabs', logo: null,
     corridors: ['PKR', 'BDT', 'INR'], pricing: { PKR: { ...DEFAULT_PRICING }, BDT: { ...DEFAULT_PRICING }, INR: { ...DEFAULT_PRICING, feePct: 2.5, fee: 0, threshold: 0 } },
     kyc: 'didit', kycCustomName: '', kycConnected: false,
@@ -175,6 +175,7 @@ function RemitWizard({ inv, token }) {
           { id: 'admin', icon: LayoutDashboard, t: 'Admin portal only', s: 'Run everything from the back office: walk-in and phone customers, no customer channel.', c: { portal: false, app: false } }].map((o) => { const I = o.icon; const on = d.channels.portal === o.c.portal && d.channels.app === o.c.app; return <button key={o.id} type="button" className={`choice-card ${on ? 'on' : ''}`} onClick={() => setD({ ...d, channels: o.c })}><div className="ic"><I /></div><b>{o.t}</b><small>{o.s}</small>{on && <span className="tick"><Check /></span>}</button> })}
       </div>
       <div className="banner"><Monitor /><span>The web portal and the app are <b>one product</b>: anything you design or change for one is applied to the other automatically.</span></div>
+      <Field label="Plan"><div className="choices3">{PLANS.filter((p) => p.id !== 'Bureau').map((p) => <button key={p.id} type="button" className={`choice-card ${d.plan === p.id ? 'on' : ''}`} onClick={() => setD({ ...d, plan: p.id })}><b>{p.name}</b><span className="num" style={{ fontSize: 20, fontWeight: 600 }}>£{p.monthly}<small className="muted" style={{ fontSize: 12, fontWeight: 500 }}>/month</small></span><small>{p.perTx ? `+ £${p.perTx.toFixed(2)} per transfer · ` : ''}{p.modules.filter((m) => !['dashboard', 'settings', 'reports', 'support'].includes(m)).length} modules{p.modules.includes('agents') ? ' incl. agents, corporate, rewards, bureau' : ''}</small>{d.plan === p.id && <span className="tick"><Check /></span>}</button>)}</div><span className="hint">One-off setup fee is invoiced after launch; the monthly fee starts when you go live. Change plan any time from Settings → Modules.</span></Field>
     </div>,
     /* 2 Design */
     <div className="stack">
@@ -269,7 +270,7 @@ function RemitWizard({ inv, token }) {
         <Field label="Your own domain (optional)" id="w-domain" hint={`Add a CNAME to tenants.${PLATFORM.domain}. You can do this later.`}><input id="w-domain" className="inp" placeholder="send.yourbusiness.co.uk" value={d.domain} onChange={set('domain')} /></Field>
       </div>
       <div className="list" style={{ border: '1px solid var(--line)', borderRadius: 10 }}>
-        {[['Business', `${d.legalName} · FRN ${d.frn} · MLR ${d.mlr}`, 0], ['Channels', d.channels.portal ? 'Admin + web portal + app' : d.channels.app ? 'Admin + app' : 'Admin only', 1], ['Design', `${d.font} · ${d.color} / ${d.accent} · ${d.mode}`, 2],
+        {[['Business', `${d.legalName} · FRN ${d.frn} · MLR ${d.mlr}`, 0], ['Package', `${d.channels.portal ? 'Admin + web portal + app' : d.channels.app ? 'Admin + app' : 'Admin only'} · ${d.plan} plan £${PLANS.find((p) => p.id === d.plan)?.monthly}/month${PLANS.find((p) => p.id === d.plan)?.perTx ? ` + £${PLANS.find((p) => p.id === d.plan).perTx.toFixed(2)}/transfer` : ''} · setup fee invoiced`, 1], ['Design', `${d.font} · ${d.color} / ${d.accent} · ${d.mode}`, 2],
           ['Identity checks', d.kyc === 'custom' ? `${d.kycCustomName} (requested, extra cost)` : `${kycName} · ${d.kycConnected ? 'connected' : 'not connected yet'}`, 3],
           ['Payouts', `${d.corridors.map((c) => CURRENCIES[c].country).join(', ')} · ${d.partners.length ? `Daytona · ${d.payoutConnected ? 'connected' : 'not connected yet'}` : ''}${d.payoutCustomName ? ` · ${d.payoutCustomName} (requested)` : ''} · ${d.corridors.map((c) => `${c}: ${E.describePricing({ ...DEFAULT_PRICING, ...(d.pricing[c] || {}) })}`).join(' · ')}`, 4],
           ['Payments in', `${d.payin.map((b) => PAYIN_BANKS.find((x) => x.id === b)?.name).join(', ')}${d.payinCustomName ? ` · ${d.payinCustomName} (requested, ${d.payinUrgency})` : ''}`, 5],

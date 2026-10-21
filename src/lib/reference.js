@@ -42,10 +42,10 @@ export const DEFAULT_PLATFORM = {
     { id: 'custom', name: 'Another processor', kind: 'Extra cost · normally about a week', included: false },
   ],
   plans: [
-    { id: 'Bureau', name: 'Bureau', monthly: 149, perTx: 0, modules: ['dashboard', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'bureau', 'developer'] },
-    { id: 'Starter', name: 'Starter', monthly: 199, perTx: 0.4, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker'] },
-    { id: 'Growth', name: 'Growth', monthly: 499, perTx: 0.25, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'agents', 'corporate', 'rewards', 'bureau', 'developer'] },
-    { id: 'Enterprise', name: 'Enterprise', monthly: 1200, perTx: 0.15, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'agents', 'corporate', 'rewards', 'bureau', 'developer'] },
+    { id: 'Bureau', name: 'Bureau', monthly: 149, perTx: 0, modules: ['dashboard', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'bureau', 'developer', 'support'] },
+    { id: 'Starter', name: 'Starter', monthly: 199, perTx: 0.4, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'support'] },
+    { id: 'Growth', name: 'Growth', monthly: 499, perTx: 0.25, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'agents', 'corporate', 'rewards', 'bureau', 'developer', 'support'] },
+    { id: 'Enterprise', name: 'Enterprise', monthly: 1200, perTx: 0.15, modules: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'tracker', 'agents', 'corporate', 'rewards', 'bureau', 'developer', 'support'] },
   ],
   modules: [
     { id: 'dashboard', label: 'Dashboard', core: true },
@@ -55,6 +55,7 @@ export const DEFAULT_PLATFORM = {
     { id: 'compliance', label: 'Compliance', core: true },
     { id: 'treasury', label: 'Treasury', core: true },
     { id: 'reports', label: 'Reports', core: true },
+    { id: 'support', label: 'Support', core: true, desc: 'Customer queries and replies' },
     { id: 'agents', label: 'Agents', core: false, desc: 'Branch and agent network with floats and commission' },
     { id: 'corporate', label: 'Corporate clients', core: false, desc: 'Business senders with contract limits and bulk payments' },
     { id: 'bureau', label: 'Bureau de change', core: false, desc: 'Over-the-counter cash FX: rate board, tills, stock, deals' },
@@ -126,9 +127,9 @@ export const moduleLabel = (id) => MODULES.find((m) => m.id === id)?.label || id
 
 export const DEFAULT_ROLES = {
   Admin: ['*'],
-  MLRO: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'reports', 'corporate', 'agents', 'bureau'],
-  'Compliance officer': ['dashboard', 'transactions', 'customers', 'compliance', 'corporate'],
-  Cashier: ['dashboard', 'transactions', 'payments', 'customers', 'bureau', 'tracker'],
+  MLRO: ['dashboard', 'transactions', 'payments', 'customers', 'compliance', 'reports', 'corporate', 'agents', 'bureau', 'support'],
+  'Compliance officer': ['dashboard', 'transactions', 'customers', 'compliance', 'corporate', 'support'],
+  Cashier: ['dashboard', 'transactions', 'payments', 'customers', 'bureau', 'tracker', 'support'],
   'Bureau cashier': ['dashboard', 'bureau', 'customers'],
   Agent: ['transactions', 'customers', 'tracker'],
 }

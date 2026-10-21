@@ -45,7 +45,7 @@ export function makeTenant(o) {
     modules: o.modules || [...planById(o.plan || 'Starter').modules],
     agents: o.agents || [], branches: o.branches || [{ id: 'main', name: 'Head office' }],
     rewards: { enabled: false, pointsPerPound: 1, referralBonus: 10, redeemRate: 100, ...(o.rewards || {}) },
-    apiKeys: o.apiKeys || [], webhooks: o.webhooks || [],
+    apiKeys: o.apiKeys || [], webhooks: o.webhooks || [], promos: o.promos || [],
     bureau: { idThreshold: 5000, linkedHours: 24, spreadPct: 3, board: {}, stock: {}, suppliers: ['Wholesale FX Ltd'], reservationHours: 24, shifts: [], orders: [], ...(o.bureau || {}) },
     staff: o.staff || [{ id: uid('stf'), name: 'Owner', email: o.email || '', role: 'Admin' }],
     treasury: o.treasury || Object.fromEntries((o.partners || []).map((p) => [p, 0])),
