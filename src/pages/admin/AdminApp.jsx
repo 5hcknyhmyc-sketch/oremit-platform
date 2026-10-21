@@ -3,7 +3,7 @@ import { Routes, Route, NavLink, Navigate, Link, useNavigate } from 'react-route
 import { LayoutDashboard, Building2, CheckCircle2, Globe2, Receipt, ScrollText, Plus, Copy, ExternalLink, Plug, SlidersHorizontal } from 'lucide-react'
 import { useStore, act } from '../../store'
 import TopBar from '../../components/TopBar'
-import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal, Field, Toggle } from '../../components/ui'
+import { Logo, Panel, PageHead, Kpi, Pill, Empty, Modal, Field, Toggle, MadeBy } from '../../components/ui'
 import * as E from '../../lib/engine'
 import { PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM, MODULES, PRODUCTS } from '../../lib/reference'
 import * as M from '../../lib/modules'
@@ -25,7 +25,7 @@ export default function AdminApp() {
         <aside className="side">
           <div className="tenant-id"><div className="logo" style={{ '--brand': 'var(--chrome)', '--brand-ink': '#fff' }}>{PLATFORM.owner.slice(0, 2).toUpperCase()}</div><div><b>{PLATFORM.owner}</b><span>admin.{PLATFORM.domain}</span></div></div>
           <nav className="nav">{NAV.map(([to, l, I, end]) => <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : '')}><I />{l}{l === 'Approvals' && review ? <span className="count">{review}</span> : null}{l === 'Integration requests' && reqs ? <span className="count">{reqs}</span> : null}</NavLink>)}</nav>
-          <div className="side-foot"><span>Signed in as <b>Zaland Shah</b></span><span>Owner</span></div>
+          <div className="side-foot"><span>Signed in as <b>Zaland Shah</b></span><span>Owner</span><MadeBy /></div>
         </aside>
         <main className="main">
           <Routes>
@@ -67,6 +67,7 @@ function InviteBox() {
   return (
     <Panel title="Onboard a new business" actions={<button className="btn pri sm" onClick={() => setOpen(true)}><Plus />Create onboarding link</button>}>
       <div className="panel-b stack-s">
+        <div className="linkbox" style={{ marginBottom: 8 }}><span className="tag">Public</span><code>{location.origin}/get-started</code><button className="btn sm" onClick={() => navigator.clipboard?.writeText(`${location.origin}/get-started`)}><Copy />Copy</button><Link className="btn sm" to="/get-started"><ExternalLink />Open</Link><span className="muted small">Anyone with this link can self-onboard (remittance, bureau or both). Private links below are for businesses you invite.</span></div>
         {last && <div className="linkbox"><span className="tag">{last.products.map((p) => PRODUCTS.find((x) => x.id === p)?.label).join(' + ')}</span><code>{url(last)}</code><button className="btn sm" onClick={() => navigator.clipboard?.writeText(url(last))}><Copy />Copy</button><Link className="btn sm" to={`/onboard/${last.token}`}><ExternalLink />Open as the MSB</Link></div>}
         <p className="muted small">One link per business. Choose what they're getting: money remittance, bureau de change, or both. The wizard only asks for what that product needs, and their portal and app are generated when they finish. You approve before they go live.</p>
         {pending.length > 0 && <div className="list" style={{ borderTop: '1px solid var(--line)' }}>{pending.map((i) => <div className="li" key={i.token} style={{ padding: '8px 0' }}><div className="grow"><b>{i.label || 'Unnamed link'} <span className="tag">{(i.products || ['remittance']).map((p) => PRODUCTS.find((x) => x.id === p)?.label).join(' + ')}</span></b><small>Sent {fmtDate(i.createdAt, false)} · expires {fmtDate(i.expiresAt, false)}</small></div><Link className="btn sm" to={`/onboard/${i.token}`}>Open</Link></div>)}</div>}

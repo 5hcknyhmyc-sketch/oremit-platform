@@ -25,20 +25,21 @@ export const DEFAULT_PLATFORM = {
   },
   rateSource: 'Manual (Super Admin)',
   partners: [
-    { id: 'daytona', name: 'Daytona Capital Management', cur: ['PKR', 'INR', 'NGN', 'BDT', 'PHP', 'KES', 'GHS', 'EUR', 'USD', 'AED', 'TRY'], methods: ['Bank', 'Cash pickup', 'Mobile wallet'], included: true, desc: 'Pre-integrated. Bank, cash pickup and wallet payouts across all platform corridors.', status: 'live' },
+    { id: 'daytona', name: 'Daytona Capital Management (Hello Paisa)', cur: ['PKR', 'INR', 'NGN', 'BDT', 'PHP', 'KES', 'GHS', 'EUR', 'USD', 'AED', 'TRY'], methods: ['Bank', 'Cash pickup', 'Mobile wallet'], included: true, desc: 'Built-in integration. Bank, cash pickup and wallet payouts across all platform corridors. FCA-authorised payment institution; consumer brand Hello Paisa.', status: 'live' },
   ],
   kycProviders: [
-    { id: 'didit', name: 'Didit', included: true, desc: 'ID document + liveness, AML screening, proof of address. Included in your plan.' },
-    { id: 'shufti', name: 'Shufti Pro', included: true, desc: 'ID document + face match, AML screening, address verification. Included in your plan.' },
-    { id: 'custom', name: 'Custom KYC integration', included: false, desc: 'Bring your own provider. Scoped and quoted separately by TheFXSoft.' },
+    { id: 'didit', name: 'Didit', included: true, desc: 'ID document + liveness, AML screening, proof of address. Built-in integration — connect your own Didit account.' },
+    { id: 'shufti', name: 'Shufti Pro', included: true, desc: 'ID document + face match, AML screening, address verification. Built-in integration — connect your own Shufti Pro account.' },
+    { id: 'custom', name: 'Another provider', included: false, desc: 'Tell us who. Extra cost; we will get in touch with timings and a quote.' },
   ],
   payinBanks: [
+    { id: 'fena', name: 'Fena', kind: 'Open banking — customers pay by bank in-app', included: true },
     { id: 'clearbank', name: 'ClearBank', kind: 'Bank account (Faster Payments, CHAPS)', included: true },
     { id: 'revolut', name: 'Revolut Business', kind: 'Bank account', included: true },
     { id: 'embank', name: 'EM Bank', kind: 'Safeguarding + corporate accounts', included: true },
     { id: 'securetrading', name: 'Secure Trading', kind: 'Card payments', included: true },
     { id: 'transact365', name: 'Bombora Transact365', kind: 'Card payments', included: true },
-    { id: 'custom', name: 'Custom bank integration', kind: 'Quoted separately', included: false },
+    { id: 'custom', name: 'Another processor', kind: 'Extra cost · normally about a week', included: false },
   ],
   plans: [
     { id: 'Bureau', name: 'Bureau', monthly: 149, perTx: 0, modules: ['dashboard', 'customers', 'compliance', 'treasury', 'reports', 'settings', 'bureau', 'developer'] },

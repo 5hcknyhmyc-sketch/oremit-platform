@@ -2,7 +2,8 @@ import { createContext, useContext } from 'react'
 import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, ArrowLeftRight, Landmark, Users, ShieldCheck, Wallet, BarChart3, Settings as Cog, Store, Building, Coins, Gift, Search, Code2 } from 'lucide-react'
 import { useStore } from '../../store'
-import { Logo, brandVars } from '../../components/ui'
+import { Logo, brandVars, MadeBy } from '../../components/ui'
+import { inkOn } from '../../lib/util'
 import TopBar from '../../components/TopBar'
 import AiPanel from '../../components/AiPanel'
 import { MODULES, DECISION_ROLES, SAR_ROLES, PLATFORM } from '../../lib/reference'
@@ -49,9 +50,14 @@ export default function PortalApp() {
   const first = MODULES.find((m) => allowed.includes(m.id))
   const guard = (m, el) => (allowed.includes(m) ? el : <NoAccess />)
 
+  const at = t.adminTheme || {}
+  const accent = at.accent || t.brand.color
+  const sideVars = at.sidebar === 'dark' ? { '--side-bg': '#0F1613', '--side-ink': '#E8EFEA', '--side-muted': '#9DB3A8', '--side-line': '#263730', '--side-hover': '#1C2823', '--side-active': 'rgba(255,255,255,.14)', '--side-active-ink': '#fff' }
+    : at.sidebar === 'brand' ? { '--side-bg': t.brand.color, '--side-ink': inkOn(t.brand.color), '--side-muted': inkOn(t.brand.color), '--side-line': 'rgba(255,255,255,.18)', '--side-hover': 'rgba(255,255,255,.12)', '--side-active': 'rgba(255,255,255,.22)', '--side-active-ink': inkOn(t.brand.color) }
+    : {}
   return (
     <Ctx.Provider value={ctx}>
-      <div style={brandVars(t)}>
+      <div style={{ ...brandVars(t), '--brand': accent, '--brand-ink': inkOn(accent), ...sideVars, fontFamily: 'var(--b-font)' }}>
         <TopBar label={session.impersonating ? 'Super Admin view' : `${t.name} · ${session.role}`} />
         {session.impersonating && (
           <div className="imp-banner">You're viewing {t.name}'s portal as the platform owner. Actions are recorded under your name.
@@ -62,14 +68,14 @@ export default function PortalApp() {
         {t.status === 'suspended' && <div className="imp-banner">This MSB is suspended by the platform owner. Customers cannot send money.</div>}
         <div className="shell">
           <aside className="side">
-            <div className="tenant-id"><Logo t={t} /><div><b>{t.name}</b><span>{t.domain || `${t.slug}.${PLATFORM.domain}`}</span></div></div>
+            <div className="tenant-id">{at.showLogo !== false && <Logo t={t} />}<div><b>{t.name}</b><span>{t.domain || `${t.slug}.${PLATFORM.domain}`}</span></div></div>
             <nav className="nav">
               {MODULES.filter((m) => allowed.includes(m.id)).map((m) => {
                 const I = ICONS[m.id]
                 return <NavLink key={m.id} to={PATHS[m.id]} end={m.id === 'dashboard'} className={({ isActive }) => (isActive ? 'active' : '')}><I />{m.label}{counts[m.id] ? <span className="count">{counts[m.id]}</span> : null}</NavLink>
               })}
             </nav>
-            <div className="side-foot"><span>Signed in as <b>{session.name}</b></span><span>{session.role}</span></div>
+            <div className="side-foot"><span>Signed in as <b>{session.name}</b></span><span>{session.role}</span><MadeBy /></div>
           </aside>
           <main className="main">
             <Routes>

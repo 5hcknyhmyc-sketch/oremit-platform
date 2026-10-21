@@ -4,6 +4,7 @@ import { CURRENCIES, PARTNERS, partnerFor, partnerById, KYC_PROVIDERS, PAYIN_BAN
 import { evaluate, decide, topSeverity, defaultRules } from './rules'
 import { screenName } from './screening'
 import { defaultPolicies } from './policies'
+import { defaultEmails } from './emails'
 import { uid, shortCode, now, DAY, ageFrom, initials } from './util'
 
 export class OpError extends Error {}
@@ -22,10 +23,14 @@ export function makeTenant(o) {
     status: o.status || 'review', slug: o.slug, domain: o.domain || '', plan: o.plan || 'Starter',
     frn: o.frn || '', mlr: o.mlr || '', email: o.email || '', createdAt: o.createdAt || now(), liveAt: o.liveAt || null,
     setupSeconds: o.setupSeconds ?? null,
-    brand: { color: '#1B2559', accent: '#F2A541', logo: null, appName: o.name, ...(o.brand || {}) },
+    brand: { color: '#1B2559', accent: '#F2A541', logo: null, appName: o.name, tagline: 'Send money home in minutes', font: 'Inter', fontSize: 'M', radius: 14, mode: 'light', nav: 'tabs', ...(o.brand || {}) },
+    channels: { portal: true, app: true, ...(o.channels || {}) },
+    adminTheme: { sidebar: 'light', accent: null, showLogo: true, ...(o.adminTheme || {}) },
+    emailTemplates: o.emailTemplates || defaultEmails(),
+    companyNumber: o.companyNumber || '', address: o.address || '', phone: o.phone || '', contactName: o.contactName || '',
     corridors: (o.corridors || []).map((c) => (typeof c === 'string' ? { cur: c, enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 } : c)),
     partners: o.partners || [],
-    integrations: { kyc: { provider: 'didit', status: 'connected' }, payin: ['clearbank'], ...(o.integrations || {}) },
+    integrations: { kyc: { provider: 'didit', status: 'connected' }, payout: { status: 'connected' }, payin: ['clearbank'], payinStatus: {}, ...(o.integrations || {}) },
     declaration: o.declaration || null,
     compliance: {
       mlro: '', eddThreshold: 5000, sofThreshold: 2000, dailyLimit: 10000, screeningThreshold: 85,
@@ -153,12 +158,13 @@ export function completeOnboarding(db, token, data, seconds) {
     modules: [...new Set([...planById(plan).modules, ...(bdc ? ['bureau'] : []), ...(remit ? ['transactions', 'payments', 'tracker'] : [])])].filter((m) => remit || !['transactions', 'payments', 'tracker'].includes(m)),
     branches: (data.branches || []).length ? data.branches.map((b, i) => ({ id: i === 0 ? 'main' : uid('br'), name: b.name, address: b.address || '' })) : undefined,
     bureau: bdc ? { idThreshold: +data.bdcThreshold || 5000, linkedHours: 24, spreadPct: +data.spread || 3, board: {}, stock: {}, suppliers: data.supplier ? [data.supplier] : ['Wholesale FX Ltd'], currencies: data.cashCurrencies || [], reservationHours: 24, shifts: [], orders: [] } : undefined,
-    brand: { color: data.color, accent: data.accent, logo: data.logo, appName: data.appName || data.name },
+    brand: { color: data.color, accent: data.accent, logo: data.logo, appName: data.appName || data.name, tagline: data.tagline, font: data.font, fontSize: data.fontSize, radius: +data.radius, mode: data.mode, nav: data.nav },
+    channels: data.channels, adminTheme: data.adminTheme, emailTemplates: data.emails, companyNumber: data.companyNumber, address: data.address, phone: data.phone, contactName: data.ownerName,
     corridors: remit ? data.corridors.map((cur) => ({ cur, enabled: true, fee: +data.fee || 0, margin: +data.margin || 0, min: 10, max: +data.daily || 10000 })) : [],
     partners: remit ? data.partners : [],
-    integrations: { kyc: { provider: data.kyc, status: data.kyc === 'custom' ? 'requested' : 'connected' }, payin: data.payin },
+    integrations: { kyc: { provider: data.kyc, status: data.kyc === 'custom' ? 'requested' : data.kycConnected ? 'connected' : 'pending' }, payout: { status: data.payoutConnected ? 'connected' : data.partners.length ? 'pending' : 'requested' }, payin: data.payin, payinStatus: data.payinConnected || {} },
     declaration: { accepted: !!data.declaration, by: data.ownerName || data.email, at: now() },
-    compliance: { mlro: data.mlro, eddThreshold: +data.edd, sofThreshold: +data.sof, dailyLimit: +data.daily, idv: data.idv, screening: data.screening, autoRelease: { enabled: true, maxAmount: Math.min(2000, +data.sof || 2000) } },
+    compliance: { mlro: data.mlro, eddThreshold: +data.edd, sofThreshold: +data.sof, dailyLimit: +data.daily, idv: data.idv, screening: data.screening, autoRelease: { enabled: data.releaseMode !== 'manual', maxAmount: data.releaseMode === 'manual' ? 0 : +data.daily || 10000 }, releaseMode: data.releaseMode || 'auto', policyFiles: data.policyFiles || [] },
     staff: [{ id: uid('stf'), name: data.ownerName || 'Owner', email: data.email, role: 'Admin' }, ...(data.mlro ? [{ id: uid('stf'), name: data.mlro, email: '', role: 'MLRO' }] : [])],
     checks: { reg: (remit ? /^\d{6,7}$/.test(data.frn) : true) && !!data.mlr, kyc: data.kyc !== 'custom', payout: !remit || data.partners.some((p) => PARTNERS.some((x) => x.id === p)), prefund: !remit, domain: true },
   })
@@ -168,6 +174,7 @@ export function completeOnboarding(db, token, data, seconds) {
   if (data.kyc === 'custom') requestIntegration(db, t.id, { kind: 'kyc', name: data.kycCustomName || 'Custom KYC provider', notes: 'Requested at onboarding' }, data.email, now())
   if (bdc && +data.openingFloat > 0) { t.bureau.stock[`main:GBP`] = +data.openingFloat; t.accounts.push({ id: 'till_main_GBP', name: `Till ${t.branches[0].name} — GBP`, type: 'till', cur: 'GBP', branchId: 'main' }); post(db, t.id, { type: 'OPEN', details: 'Opening GBP till float', by: data.email, at: now(), lines: [{ account: 'till_main_GBP', debit: +data.openingFloat }, { account: t.accounts.find((a) => a.type === 'bank').id, credit: +data.openingFloat }] }) }
   if (remit && data.payoutCustomName) requestIntegration(db, t.id, { kind: 'payout', name: data.payoutCustomName, notes: 'Requested at onboarding', cur: data.corridors }, data.email, now())
+  if (remit && data.payinCustomName) requestIntegration(db, t.id, { kind: 'payin', name: data.payinCustomName, notes: `Requested at onboarding · ${({ standard: 'standard (about a week)', urgent: 'urgent (extra cost)', critical: 'very urgent (higher extra cost)' })[data.payinUrgency || 'standard']}` }, data.email, now())
   audit(db, { tenantId: t.id, actor: data.email || data.name, action: `Completed onboarding in ${Math.floor(seconds / 60)}m ${seconds % 60}s`, target: t.name })
   return t
 }

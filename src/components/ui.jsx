@@ -98,7 +98,12 @@ export function Logo({ t, size = '' }) {
     </div>
   )
 }
-export const brandVars = (t) => ({ '--brand': t.brand.color, '--brand-ink': inkOn(t.brand.color), '--accent': t.brand.accent, '--accent-ink': inkOn(t.brand.accent) })
+const FS = { S: '13px', M: '14px', L: '15.5px' }
+export const brandVars = (t) => {
+  const b = t.brand || {}
+  return { '--brand': b.color, '--brand-ink': inkOn(b.color), '--accent': b.accent, '--accent-ink': inkOn(b.accent), '--b-font': `"${b.font || 'Inter'}", var(--f-ui)`, '--b-r': `${b.radius ?? 14}px`, '--b-fs': FS[b.fontSize || 'M'] }
+}
+export const MadeBy = ({ style }) => <div className="madeby" style={style}>Made by TheFXSoft Limited</div>
 
 export function Tabs({ items }) {
   return (

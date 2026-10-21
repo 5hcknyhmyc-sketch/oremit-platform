@@ -27,7 +27,7 @@ function usePartnerSimulator() {
 export default function App() {
   usePartnerSimulator()
   const db = useStore((s) => s.db)
-  useEffect(() => { if (!db.journals || !db.platform || !db.deals || !db.reservations || db.tenants.some((t) => !t.integrations || !t.modules || !t.products)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
+  useEffect(() => { if (!db.journals || !db.platform || !db.deals || !db.reservations || db.tenants.some((t) => !t.integrations || !t.modules || !t.products || !t.channels || !t.emailTemplates)) { try { localStorage.removeItem('coremit-demo-v1') } catch (e) {} useStore.getState().reset() } }, [db])
   // In production, a request to <slug>.coremit.app or an MSB's own domain opens its customer app directly.
   const hostTenant = resolveHostTenant(db)
   return (
@@ -38,6 +38,8 @@ export default function App() {
         <Route path="/portal/*" element={<PortalApp />} />
         <Route path="/app/:slug/*" element={<CustomerApp />} />
         <Route path="/onboard/:token" element={<Onboard />} />
+        <Route path="/get-started" element={<Onboard />} />
+        <Route path="/get-started/bureau" element={<Onboard />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toast />

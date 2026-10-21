@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
-import { Save, Plus } from 'lucide-react'
+import { Save, Plus, Mail, Smartphone, Monitor } from 'lucide-react'
 import { usePortal } from './PortalApp'
 import { Panel, PageHead, Tabs, Field, Toggle, Modal, Pill } from '../../components/ui'
 import { act, useStore } from '../../store'
@@ -8,6 +8,8 @@ import * as E from '../../lib/engine'
 import { MODULES, CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, partnersOf, PLANS, PLATFORM } from '../../lib/reference'
 import * as M from '../../lib/modules'
 import { AppPreview } from '../app/CustomerApp'
+import { WebPreview, AdminPreview } from '../onboard/Onboard'
+import { renderEmail, EMAIL_VARS, defaultEmails } from '../../lib/emails'
 import { uid, fmtDate } from '../../lib/util'
 
 const SWATCHES = ['#0E5E6F', '#1D5C4D', '#24409E', '#8C3B2E', '#5B2A86', '#1B2559', '#B4472A', '#2D3748']
@@ -16,11 +18,13 @@ export default function Settings() {
   return (
     <>
       <PageHead title="Settings" sub="Brand, corridors, team, domain and business details." />
-      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/modules', label: 'Modules' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
+      <Tabs items={[{ to: '/portal/settings', label: 'Branding', end: true }, { to: '/portal/settings/corridors', label: 'Corridors & pricing' }, { to: '/portal/settings/integrations', label: 'Integrations' }, { to: '/portal/settings/emails', label: 'Emails' }, { to: '/portal/settings/admin', label: 'Admin portal' }, { to: '/portal/settings/team', label: 'Staff & roles' }, { to: '/portal/settings/modules', label: 'Modules' }, { to: '/portal/settings/domain', label: 'Domain' }, { to: '/portal/settings/business', label: 'Business' }]} />
       <Routes>
         <Route index element={<Branding />} />
         <Route path="corridors" element={<Corridors />} />
         <Route path="integrations" element={<Integrations />} />
+        <Route path="emails" element={<Emails />} />
+        <Route path="admin" element={<AdminTheme />} />
         <Route path="team" element={<Team />} />
         <Route path="modules" element={<Modules />} />
         <Route path="domain" element={<Domain />} />
@@ -32,24 +36,89 @@ export default function Settings() {
 
 const saveTenant = (t, actor, patch, msg, what) => act((d) => { const tt = d.tenants.find((x) => x.id === t.id); patch(tt); E.audit(d, { tenantId: t.id, actor, action: what, target: '' }) }, msg)
 
+const FONTS = ['Inter', 'Manrope', 'DM Sans', 'Poppins', 'Nunito', 'Roboto', 'Plus Jakarta Sans', 'Lato']
 function Branding() {
   const { t, actor } = usePortal()
-  const [b, setB] = useState({ ...t.brand })
+  const [b, setB] = useState({ font: 'Inter', fontSize: 'M', radius: 14, mode: 'light', tagline: '', ...t.brand })
   const [name, setName] = useState(t.name)
+  const [tab, setTab] = useState('app')
   const preview = { ...t, name, brand: b }
   const onFile = (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => setB({ ...b, logo: r.result }); r.readAsDataURL(f) }
   return (
     <div className="grid2">
-      <Panel title="Brand" actions={<button className="btn pri sm" onClick={() => saveTenant(t, actor, (tt) => { tt.brand = b; tt.name = name }, 'Brand saved — live for customers now', 'Updated branding')}><Save />Save</button>} pad>
+      <Panel title="Brand — web portal and app together" actions={<button className="btn pri sm" onClick={() => saveTenant(t, actor, (tt) => { tt.brand = b; tt.name = name }, 'Brand saved — live for customers now', 'Updated branding')}><Save />Save</button>} pad>
         <div className="stack">
-          <Field label="Business name" id="br-name"><input id="br-name" className="inp" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-          <Field label="App name customers see" id="br-app"><input id="br-app" className="inp" value={b.appName} onChange={(e) => setB({ ...b, appName: e.target.value })} /></Field>
-          <Field label="Primary colour"><div className="swatches">{SWATCHES.map((c) => <button key={c} className="sw" style={{ background: c }} aria-label={c} aria-pressed={b.color.toLowerCase() === c} onClick={() => setB({ ...b, color: c })} />)}<input type="color" id="br-color" value={b.color} onChange={(e) => setB({ ...b, color: e.target.value })} /></div></Field>
+          <div className="form">
+            <Field label="Business name" id="br-name"><input id="br-name" className="inp" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="App / portal name" id="br-app"><input id="br-app" className="inp" value={b.appName} onChange={(e) => setB({ ...b, appName: e.target.value })} /></Field>
+            <Field label="Tagline" id="br-tag"><input id="br-tag" className="inp" value={b.tagline || ''} onChange={(e) => setB({ ...b, tagline: e.target.value })} /></Field>
+          </div>
+          <Field label="Primary colour"><div className="swatches">{SWATCHES.map((c) => <button key={c} className="sw" style={{ background: c }} aria-label={c} aria-pressed={b.color.toLowerCase() === c.toLowerCase()} onClick={() => setB({ ...b, color: c })} />)}<input type="color" id="br-color" value={b.color} onChange={(e) => setB({ ...b, color: e.target.value })} /></div></Field>
           <Field label="Accent colour"><div className="swatches">{['#F2A541', '#F0B44C', '#53C4B0', '#E8C468', '#EF6F6C', '#9AD1D4'].map((c) => <button key={c} className="sw" style={{ background: c }} aria-label={c} aria-pressed={b.accent.toLowerCase() === c.toLowerCase()} onClick={() => setB({ ...b, accent: c })} />)}<input type="color" id="br-accent" value={b.accent} onChange={(e) => setB({ ...b, accent: e.target.value })} /></div></Field>
+          <div className="form">
+            <Field label="Font" id="br-font"><select id="br-font" className="sel" value={b.font} onChange={(e) => setB({ ...b, font: e.target.value })}>{FONTS.map((f) => <option key={f}>{f}</option>)}</select></Field>
+            <Field label="Text size"><div className="seg" role="radiogroup">{[['S', 'Small'], ['M', 'Medium'], ['L', 'Large']].map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={b.fontSize === v} onClick={() => setB({ ...b, fontSize: v })}>{l}</button>)}</div></Field>
+            <Field label={`Corner roundness · ${b.radius}px`} id="br-rad"><input id="br-rad" type="range" min="0" max="28" value={b.radius} onChange={(e) => setB({ ...b, radius: +e.target.value })} /></Field>
+            <Field label="Appearance"><div className="seg" role="radiogroup">{[['light', 'Light'], ['dark', 'Dark'], ['system', 'Match device']].map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={b.mode === v} onClick={() => setB({ ...b, mode: v })}>{l}</button>)}</div></Field>
+          </div>
           <Field label="Logo" id="br-logo" hint="Square PNG or SVG, at least 256px"><div className="row"><input id="br-logo" type="file" accept="image/*" onChange={onFile} />{b.logo && <button className="btn sm" onClick={() => setB({ ...b, logo: null })}>Remove</button>}</div></Field>
+          <div className="banner good">Changes apply to the web portal immediately and to the app on its next launch. Both always match.</div>
         </div>
       </Panel>
-      <div className="stack" style={{ alignItems: 'center' }}><div className="phone"><AppPreview t={preview} /></div><span className="muted small mono">Live preview · customer app</span></div>
+      <div className="stack" style={{ alignItems: 'center' }}>
+        <div className="seg" role="tablist"><button type="button" role="tab" aria-selected={tab === 'app'} onClick={() => setTab('app')}><Smartphone size={14} />App</button><button type="button" role="tab" aria-selected={tab === 'web'} onClick={() => setTab('web')}><Monitor size={14} />Web portal</button></div>
+        {tab === 'app' ? <div className="phone"><AppPreview t={preview} /></div> : <WebPreview t={preview} />}
+        <span className="muted small mono">Live preview</span>
+      </div>
+    </div>
+  )
+}
+
+function Emails() {
+  const { t, actor } = usePortal()
+  const [list, setList] = useState(() => (t.emailTemplates || defaultEmails()).map((e) => ({ ...e })))
+  const [sel, setSel] = useState(list[0].id)
+  const tpl = list.find((x) => x.id === sel)
+  const upd = (k, v) => setList(list.map((x) => (x.id === sel ? { ...x, [k]: v } : x)))
+  const r = renderEmail(tpl, { brand: t.brand.appName || t.name, support: t.email })
+  return (
+    <div className="grid2">
+      <Panel title="Customer emails" actions={<div className="row"><button className="btn sm" onClick={() => { if (window.confirm('Restore the default wording for every email?')) setList(defaultEmails()) }}>Restore defaults</button><button className="btn pri sm" onClick={() => saveTenant(t, actor, (tt) => { tt.emailTemplates = list }, 'Emails saved', 'Updated email templates')}><Save />Save</button></div>} pad>
+        <div className="emails">
+          <div className="email-list">{list.map((e) => <button key={e.id} type="button" className={e.id === sel ? 'on' : ''} onClick={() => setSel(e.id)}><Mail /><span>{e.event}</span></button>)}</div>
+          <div className="stack-s">
+            <Field label="Subject" id="em-s"><input id="em-s" className="inp" value={tpl.subject} onChange={(e) => upd('subject', e.target.value)} /></Field>
+            <Field label="Message" id="em-b"><textarea id="em-b" className="ta" rows={9} value={tpl.body} onChange={(e) => upd('body', e.target.value)} /></Field>
+            <div className="row">{EMAIL_VARS.map((v) => <button key={v} type="button" className="tag" style={{ cursor: 'pointer' }} onClick={() => upd('body', tpl.body + ' ' + v)}>{v}</button>)}</div>
+          </div>
+        </div>
+      </Panel>
+      <div className="stack" style={{ alignItems: 'center' }}>
+        <div className="email-prev" style={{ '--brand': t.brand.color, '--brand-ink': '#fff', '--accent': t.brand.accent, '--accent-ink': '#111' }}>
+          <div className="ep-head"><div className="lg">{t.brand.logo ? <img src={t.brand.logo} alt="" /> : (t.brand.appName || t.name).slice(0, 2).toUpperCase()}</div><b>{t.brand.appName || t.name}</b></div>
+          <div className="ep-body"><b>{r.subject}</b><p>{r.body}</p></div>
+          <div className="ep-foot">{t.brand.appName || t.name} · Made by TheFXSoft Limited</div>
+        </div>
+        <span className="muted small mono">Preview with sample values</span>
+      </div>
+    </div>
+  )
+}
+
+function AdminTheme() {
+  const { t, actor } = usePortal()
+  const [a, setA] = useState({ sidebar: 'light', accent: '', showLogo: true, ...(t.adminTheme || {}), accent: t.adminTheme?.accent || '' })
+  const preview = { ...t, adminTheme: { ...a, accent: a.accent || null } }
+  return (
+    <div className="grid2">
+      <Panel title="Admin portal look" actions={<button className="btn pri sm" onClick={() => saveTenant(t, actor, (tt) => { tt.adminTheme = { ...a, accent: a.accent || null } }, 'Admin portal updated', 'Updated admin theme')}><Save />Save</button>} pad>
+        <div className="stack">
+          <Field label="Sidebar style"><div className="seg" role="radiogroup">{[['light', 'Light'], ['brand', 'Brand colour'], ['dark', 'Dark']].map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={a.sidebar === v} onClick={() => setA({ ...a, sidebar: v })}>{l}</button>)}</div></Field>
+          <Field label="Accent colour" hint="Buttons, active menu and charts in the back office. Leave blank to use your primary colour."><div className="swatches">{['', ...SWATCHES].map((c) => <button key={c || 'auto'} className="sw" style={{ background: c || t.brand.color, outline: c ? 'none' : '2px dashed var(--muted)' }} aria-label={c || 'Same as primary'} aria-pressed={a.accent === c} onClick={() => setA({ ...a, accent: c })} />)}</div></Field>
+          <label className="check"><input type="checkbox" checked={a.showLogo !== false} onChange={(e) => setA({ ...a, showLogo: e.target.checked })} /><span>Show my logo in the sidebar</span></label>
+        </div>
+      </Panel>
+      <div className="stack" style={{ alignItems: 'center' }}><AdminPreview t={preview} /><span className="muted small mono">Live preview · saved changes apply on next page load</span></div>
     </div>
   )
 }

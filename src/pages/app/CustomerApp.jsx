@@ -16,8 +16,8 @@ export function AppPreview({ t }) {
   const rate = +(CURRENCIES[cur].rate * (1 - (cor?.margin || 0) / 100)).toFixed(4)
   const q = { rate, fee: cor?.fee || 0, receiveAmount: 500 * rate, cur }
   return (
-    <div className="app" style={brandVars(t)}>
-      <div className="app-top"><div className="row"><div className="lg">{t.brand.logo ? <img src={t.brand.logo} alt="" /> : initials(t.brand.appName || t.name)}</div><b>{t.brand.appName || t.name}</b></div><div className="hi">Hi Bilal</div><div className="sub">Send money home in minutes</div></div>
+    <div className={`app ${t.brand.mode === 'dark' ? 'dark' : ''}`} style={brandVars(t)}>
+      <div className="app-top"><div className="row"><div className="lg">{t.brand.logo ? <img src={t.brand.logo} alt="" /> : initials(t.brand.appName || t.name)}</div><b>{t.brand.appName || t.name}</b></div><div className="hi">Hi Bilal</div><div className="sub">{t.brand.tagline || 'Send money home in minutes'}</div></div>
       <div className="app-body">
         <div className="app-card">
           <span className="app-sec">You send</span><div className="amt"><input value="500" readOnly aria-label="Amount" /><span className="cur">GBP</span></div>
@@ -28,6 +28,7 @@ export function AppPreview({ t }) {
         <span className="app-sec">Recent</span>
         <div className="app-card" style={{ padding: '4px 16px' }}>{[['Ayesha Khan', 120], ['Rafiq Hossain', 300]].map(([n, v]) => <div className="app-item" key={n}><div className="av">{initials(n)}</div><div className="grow"><b>{n}</b><small>Paid · {cur}</small></div><span className="num">£{v}</span></div>)}</div>
       </div>
+      <div className="app-foot">Made by TheFXSoft Limited</div>
       <nav className="app-nav"><a className="active"><Home />Home</a><a><Users />Recipients</a><a><List />Activity</a><a><User />Profile</a></nav>
     </div>
   )
@@ -40,10 +41,12 @@ export default function CustomerApp() {
   const sessions = useStore((s) => s.customerSessions)
   const t = db.tenants.find((x) => x.slug === slug)
   if (!t || t.status === 'draft') return <div className="login"><h1>This MSB isn't available</h1><Link to="/">Back</Link></div>
+  if (t.channels && !t.channels.portal && !t.channels.app) return <div className="login"><h1>{t.name} serves customers in branch</h1><p className="muted">This business runs an admin-only package, so there is no customer app or web portal. Visit or call {t.name} to send money.</p><Link to="/">Back</Link></div>
   const c = db.customers.find((x) => x.id === sessions[t.id] && x.tenantId === t.id)
   return (
     <div className="app-page">
-      <div className="app" style={brandVars(t)}>
+      <div className={`app ${t.brand.mode === 'dark' ? 'dark' : ''}`} style={brandVars(t)}>
+        {t.channels && !t.channels.portal && <div className="imp-banner" style={{ justifyContent: 'center' }}>{t.name} customers use the mobile app — this web view is the same app, shown here for the demo.</div>}
         <Routes>
           <Route path="track" element={<PublicTrack t={t} />} />
           <Route path="rates" element={<Currency t={t} c={null} />} />
@@ -61,6 +64,7 @@ export default function CustomerApp() {
           </Routes>
         )} />
         </Routes>
+        <div className="app-foot">Made by TheFXSoft Limited</div>
       </div>
     </div>
   )
