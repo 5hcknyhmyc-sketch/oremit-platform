@@ -43,7 +43,7 @@ Each corridor has an FX margin and two fee bands split at a threshold: below it 
 - **Support inbox**: customers raise queries from Help; staff reply from the Support module; replies arrive as notifications.
 - **Document expiry** nudges in the app and Expiring/Expired pills plus dashboard items in admin.
 - **Notifications centre** in the app (bell with unread count).
-- **Plan selection** (Starter / Growth / Enterprise) in the wizard.
+- **Website auto-branding**: enter the MSB's website and the Netlify function `brand.mjs` pulls name, logo and theme colour into the design; no website → optional "build me a website" brief sent to Super Admin.
 
 ### Integrations (chosen at sign-up, changeable in Settings → Integrations)
 - **KYC**: Didit or Shufti Pro included; custom provider quoted separately.
