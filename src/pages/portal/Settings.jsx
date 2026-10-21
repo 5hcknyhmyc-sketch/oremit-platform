@@ -10,6 +10,7 @@ import * as M from '../../lib/modules'
 import { AppPreview } from '../app/CustomerApp'
 import { WebPreview, AdminPreview } from '../onboard/Onboard'
 import { renderEmail, EMAIL_VARS, defaultEmails } from '../../lib/emails'
+import PricingTable, { DEFAULT_PRICING, PricingHint } from '../../components/PricingTable'
 import { uid, fmtDate } from '../../lib/util'
 
 const SWATCHES = ['#0E5E6F', '#1D5C4D', '#24409E', '#8C3B2E', '#5B2A86', '#1B2559', '#B4472A', '#2D3748']
@@ -125,19 +126,18 @@ function AdminTheme() {
 
 function Corridors() {
   const { t, actor } = usePortal()
-  const [rows, setRows] = useState(t.corridors.map((c) => ({ ...c })))
-  const upd = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
+  const [rows, setRows] = useState(t.corridors.map((c) => ({ ...DEFAULT_PRICING, ...c })))
   const addable = Object.keys(CURRENCIES).filter((c) => !rows.some((r) => r.cur === c))
-  const save = () => saveTenant(t, actor, (tt) => { tt.corridors = rows.map((r) => ({ ...r, fee: +r.fee, margin: +r.margin, min: +r.min, max: +r.max })) }, 'Corridors saved', 'Updated corridors and pricing')
+  const save = () => saveTenant(t, actor, (tt) => { tt.corridors = rows.map((r) => ({ ...r, fee: +r.fee || 0, feePct: +r.feePct || 0, threshold: +r.threshold || 0, aboveFee: +r.aboveFee || 0, aboveFeePct: +r.aboveFeePct || 0, margin: +r.margin || 0, min: +r.min || 0, max: +r.max || 0 })) }, 'Pricing saved — live for customers now', 'Updated corridors and pricing')
   return (
     <div className="stack">
-      <Panel title="Corridors & pricing" actions={<div className="row">{addable.length > 0 && <select id="cor-add" className="sel" value="" onChange={(e) => e.target.value && setRows([...rows, { cur: e.target.value, enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 }])}><option value="">Add corridor…</option>{addable.map((c) => <option key={c} value={c}>GBP → {c} ({CURRENCIES[c].country})</option>)}</select>}<button className="btn pri sm" onClick={save}><Save />Save</button></div>}>
-        <div className="tbl-wrap"><table>
-          <thead><tr><th>On</th><th>Corridor</th><th className="r">Partner rate</th><th>Margin %</th><th>Fee £</th><th>Min £</th><th>Max £</th><th className="r">Customer rate</th></tr></thead>
-          <tbody>{rows.map((r, i) => <tr key={r.cur}><td><Toggle on={r.enabled} onChange={(v) => upd(i, 'enabled', v)} label={r.cur} /></td><td className="mono">GBP → {r.cur} <span className="muted small">{CURRENCIES[r.cur].country}</span></td><td className="r num">{CURRENCIES[r.cur].rate}</td>
-            {['margin', 'fee', 'min', 'max'].map((k) => <td key={k}><input className="inp num" style={{ width: 90 }} value={r[k]} onChange={(e) => upd(i, k, e.target.value)} aria-label={`${k} for ${r.cur}`} /></td>)}
-            <td className="r num"><b>{(CURRENCIES[r.cur].rate * (1 - (+r.margin || 0) / 100)).toFixed(4)}</b></td></tr>)}</tbody>
-        </table></div>
+      <Panel title="Corridors & pricing" actions={<div className="row">{addable.length > 0 && <select id="cor-add" className="sel" value="" onChange={(e) => e.target.value && setRows([...rows, { cur: e.target.value, enabled: true, ...DEFAULT_PRICING, min: 10, max: 10000 }])}><option value="">Add corridor…</option>{addable.map((c) => <option key={c} value={c}>GBP → {c} ({CURRENCIES[c].country})</option>)}</select>}<button className="btn pri sm" onClick={save}><Save />Save</button></div>}>
+        <PricingTable rows={rows} onChange={setRows} extra={(r, i) => <Toggle on={r.enabled} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, enabled: v } : x)))} label={r.cur} />} />
+        <div className="panel-b" style={{ paddingTop: 0 }}><PricingHint /></div>
+      </Panel>
+      <Panel title="Limits per corridor" pad>
+        <div className="tbl-wrap"><table><thead><tr><th>Corridor</th><th>Min £</th><th>Max £</th><th className="r">Customer rate</th></tr></thead>
+          <tbody>{rows.map((r, i) => <tr key={r.cur}><td className="mono">GBP → {r.cur}</td>{['min', 'max'].map((k) => <td key={k}><input className="inp num" style={{ width: 90 }} value={r[k]} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)))} aria-label={`${k} for ${r.cur}`} /></td>)}<td className="r num"><b>{(CURRENCIES[r.cur].rate * (1 - (+r.margin || 0) / 100)).toFixed(4)}</b></td></tr>)}</tbody></table></div>
       </Panel>
       <p className="muted small">Payout partners are chosen under Settings → Integrations. A corridor only works when a connected partner covers its currency.</p>
     </div>

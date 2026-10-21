@@ -28,7 +28,7 @@ export function makeTenant(o) {
     adminTheme: { sidebar: 'light', accent: null, showLogo: true, ...(o.adminTheme || {}) },
     emailTemplates: o.emailTemplates || defaultEmails(),
     companyNumber: o.companyNumber || '', address: o.address || '', phone: o.phone || '', contactName: o.contactName || '',
-    corridors: (o.corridors || []).map((c) => (typeof c === 'string' ? { cur: c, enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 } : c)),
+    corridors: (o.corridors || []).map((c) => (typeof c === 'string' ? { cur: c, enabled: true, fee: 2.99, feePct: 0, threshold: 0, aboveFee: 0, aboveFeePct: 0, margin: 1.2, min: 10, max: 10000 } : { feePct: 0, threshold: 0, aboveFee: 0, aboveFeePct: 0, ...c })),
     partners: o.partners || [],
     integrations: { kyc: { provider: 'didit', status: 'connected' }, payout: { status: 'connected' }, payin: ['clearbank'], payinStatus: {}, ...(o.integrations || {}) },
     declaration: o.declaration || null,
@@ -160,7 +160,7 @@ export function completeOnboarding(db, token, data, seconds) {
     bureau: bdc ? { idThreshold: +data.bdcThreshold || 5000, linkedHours: 24, spreadPct: +data.spread || 3, board: {}, stock: {}, suppliers: data.supplier ? [data.supplier] : ['Wholesale FX Ltd'], currencies: data.cashCurrencies || [], reservationHours: 24, shifts: [], orders: [] } : undefined,
     brand: { color: data.color, accent: data.accent, logo: data.logo, appName: data.appName || data.name, tagline: data.tagline, font: data.font, fontSize: data.fontSize, radius: +data.radius, mode: data.mode, nav: data.nav },
     channels: data.channels, adminTheme: data.adminTheme, emailTemplates: data.emails, companyNumber: data.companyNumber, address: data.address, phone: data.phone, contactName: data.ownerName,
-    corridors: remit ? data.corridors.map((cur) => ({ cur, enabled: true, fee: +data.fee || 0, margin: +data.margin || 0, min: 10, max: +data.daily || 10000 })) : [],
+    corridors: remit ? data.corridors.map((cur) => { const pr = (data.pricing || {})[cur] || {}; return { cur, enabled: true, fee: +pr.fee || 0, feePct: +pr.feePct || 0, threshold: +pr.threshold || 0, aboveFee: +pr.aboveFee || 0, aboveFeePct: +pr.aboveFeePct || 0, margin: +pr.margin || 0, min: 10, max: +data.daily || 10000 } }) : [],
     partners: remit ? data.partners : [],
     integrations: { kyc: { provider: data.kyc, status: data.kyc === 'custom' ? 'requested' : data.kycConnected ? 'connected' : 'pending' }, payout: { status: data.payoutConnected ? 'connected' : data.partners.length ? 'pending' : 'requested' }, payin: data.payin, payinStatus: data.payinConnected || {} },
     declaration: { accepted: !!data.declaration, by: data.ownerName || data.email, at: now() },
@@ -296,13 +296,29 @@ export function resolveScreening(db, caseId, outcome, note, actor, at = now()) {
 }
 
 /* ---------------- Quotes & transactions ---------------- */
+// Per-corridor pricing. Below the threshold: fixed fee + % of the amount. At or above it: the "above" fee (default £0 + 0%),
+// so an MSB can say "under £100 we charge £3 + 1%; £100 and over we only make the FX margin".
+export function corridorFee(cor, amount) {
+  const amt = Math.max(0, +amount || 0)
+  const thr = +cor.threshold || 0
+  const above = thr > 0 && amt >= thr
+  const fixed = above ? +cor.aboveFee || 0 : +cor.fee || 0
+  const pct = above ? +cor.aboveFeePct || 0 : +cor.feePct || 0
+  return { fee: +(fixed + (amt * pct) / 100).toFixed(2), band: above ? 'above' : 'below' }
+}
+export const describePricing = (cor) => {
+  const part = (f, p) => [f ? `£${(+f).toFixed(2)}` : '', p ? `${+p}%` : ''].filter(Boolean).join(' + ') || 'no fee'
+  const thr = +cor.threshold || 0
+  return thr > 0 ? `under £${thr}: ${part(cor.fee, cor.feePct)} · £${thr}+: ${part(cor.aboveFee, cor.aboveFeePct)} · FX margin ${+cor.margin || 0}%` : `${part(cor.fee, cor.feePct)} · FX margin ${+cor.margin || 0}%`
+}
 export function quote(db, t, cur, sendAmount) {
   const cor = t.corridors.find((c) => c.cur === cur && c.enabled)
   if (!cor) return null
   const base = CURRENCIES[cur].rate
   const rate = +(base * (1 - cor.margin / 100)).toFixed(4)
   const amt = Math.max(0, +sendAmount || 0)
-  return { cur, rate, fee: cor.fee, sendAmount: amt, total: +(amt + cor.fee).toFixed(2), receiveAmount: +(amt * rate).toFixed(2), min: cor.min, max: cor.max, partner: partnerFor(db, t, cur) }
+  const { fee, band } = corridorFee(cor, amt)
+  return { cur, rate, fee, feeBand: band, sendAmount: amt, total: +(amt + fee).toFixed(2), receiveAmount: +(amt * rate).toFixed(2), min: cor.min, max: cor.max, partner: partnerFor(db, t, cur) }
 }
 
 export function createTransaction(db, d, actor = 'Customer', at = now()) {

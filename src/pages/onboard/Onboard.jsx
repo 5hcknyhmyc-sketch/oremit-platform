@@ -9,6 +9,7 @@ import * as E from '../../lib/engine'
 import { CURRENCIES, PARTNERS, KYC_PROVIDERS, PAYIN_BANKS, PLATFORM } from '../../lib/reference'
 import { defaultEmails, renderEmail, EMAIL_VARS } from '../../lib/emails'
 import { gbp2, num, inkOn, initials } from '../../lib/util'
+import PricingTable, { DEFAULT_PRICING, PricingHint } from '../../components/PricingTable'
 
 const STEPS = ['Business', 'What you need', 'Design', 'Identity checks', 'Payouts', 'Payments in', 'Compliance', 'Emails', 'Admin portal', 'Launch']
 const PRIMARY = ['#1E7A5A', '#0F766E', '#1D5C4D', '#1E40AF', '#5B21B6', '#B45309', '#BE123C', '#1F2937']
@@ -75,7 +76,7 @@ function RemitWizard({ inv, token }) {
     name: 'Thames Remit', legalName: 'Thames Remit Ltd', companyNumber: '12345678', address: '14 Station Road, Barking IG11 8DN', frn: '904551', mlr: 'XBML00000412093', ownerName: 'Hassan Ali', phone: '020 3000 0000', email: 'ops@thamesremit.co.uk',
     channels: { portal: true, app: true },
     appName: 'Thames Remit', tagline: 'Send money home in minutes', color: '#1E7A5A', accent: '#F0B44C', font: 'Inter', fontSize: 'M', radius: 14, mode: 'light', nav: 'tabs', logo: null,
-    corridors: ['PKR', 'BDT', 'INR'], fee: '2.49', margin: '1.1',
+    corridors: ['PKR', 'BDT', 'INR'], pricing: { PKR: { ...DEFAULT_PRICING }, BDT: { ...DEFAULT_PRICING }, INR: { ...DEFAULT_PRICING, feePct: 2.5, fee: 0, threshold: 0 } },
     kyc: 'didit', kycCustomName: '', kycConnected: false,
     partners: ['daytona'], payoutConnected: false, payoutCustomName: '',
     payin: ['fena'], payinConnected: {}, payinCustomName: '', payinUrgency: 'standard',
@@ -89,7 +90,7 @@ function RemitWizard({ inv, token }) {
   const secs = Math.floor(((done?.at || now) - start) / 1000)
   const clock = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`
   const set = (k) => (e) => setD({ ...d, [k]: e.target.value })
-  const preview = useMemo(() => ({ name: d.name || 'Your business', products, channels: d.channels, brand: { color: d.color, accent: d.accent, logo: d.logo, appName: d.appName || d.name, tagline: d.tagline, font: d.font, fontSize: d.fontSize, radius: d.radius, mode: d.mode, nav: d.nav }, adminTheme: d.adminTheme, corridors: d.corridors.map((cur) => ({ cur, enabled: true, fee: +d.fee || 0, margin: +d.margin || 0, min: 10, max: 10000 })), partners: d.partners, bureau: { spreadPct: +d.spread || 3, board: {}, currencies: d.cashCurrencies } }), [d, products])
+  const preview = useMemo(() => ({ name: d.name || 'Your business', products, channels: d.channels, brand: { color: d.color, accent: d.accent, logo: d.logo, appName: d.appName || d.name, tagline: d.tagline, font: d.font, fontSize: d.fontSize, radius: d.radius, mode: d.mode, nav: d.nav }, adminTheme: d.adminTheme, corridors: d.corridors.map((cur) => ({ cur, enabled: true, ...DEFAULT_PRICING, ...(d.pricing[cur] || {}), min: 10, max: 10000 })), partners: d.partners, bureau: { spreadPct: +d.spread || 3, board: {}, currencies: d.cashCurrencies } }), [d, products])
 
   if (!inv) return <Shell><Panel pad><h2>This link isn't valid</h2><p className="muted">Start again from <Link to="/get-started">get started</Link>.</p></Panel></Shell>
   if (inv.usedBy && !done) { const t = db.tenants.find((x) => x.id === inv.usedBy); return <Shell><Panel pad><h2>This link has already been used</h2><p className="muted">{t?.name} was set up with it. <Link to="/">Sign in</Link> to continue.</p></Panel></Shell> }
@@ -111,7 +112,7 @@ function RemitWizard({ inv, token }) {
     const t = act((db2) => E.completeOnboarding(db2, token, payload, Math.floor((Date.now() - start) / 1000)))
     if (t) setDone({ at: Date.now(), t })
   }
-  const toggleArr = (k, v) => () => { const arr = d[k].includes(v) ? d[k].filter((x) => x !== v) : [...d[k], v]; setD({ ...d, [k]: arr }) }
+  const toggleArr = (k, v) => () => { const arr = d[k].includes(v) ? d[k].filter((x) => x !== v) : [...d[k], v]; const nd = { ...d, [k]: arr }; if (k === 'corridors' && !d.pricing[v]) nd.pricing = { ...d.pricing, [v]: { ...DEFAULT_PRICING } }; setD(nd) }
   const onFile = (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => setD({ ...d, logo: r.result }); r.readAsDataURL(f) }
   const onPolicy = (e) => { const fs = [...e.target.files].map((f) => f.name); setD({ ...d, policyFiles: [...new Set([...d.policyFiles, ...fs])] }) }
   const emailTpl = d.emails.find((x) => x.id === emailSel)
@@ -205,7 +206,7 @@ function RemitWizard({ inv, token }) {
     /* 4 Payouts */
     <div className="stack">
       <Field label="Countries you send money to"><div className="checks">{Object.entries(CURRENCIES).map(([c, v]) => <label key={c} className="check"><input type="checkbox" checked={d.corridors.includes(c)} onChange={toggleArr('corridors', c)} /><span>{v.country}<small>GBP → {c} · partner rate {num(v.rate)}</small></span></label>)}</div></Field>
-      <div className="form"><Field label="Transfer fee (£)" id="w-fee" hint="Flat fee per transfer; change per corridor later"><input id="w-fee" className="inp num" inputMode="decimal" value={d.fee} onChange={set('fee')} /></Field><Field label="FX margin (%)" id="w-margin" hint="Your margin on the partner rate"><input id="w-margin" className="inp num" inputMode="decimal" value={d.margin} onChange={set('margin')} /></Field></div>
+      <Field label="Pricing per corridor"><PricingTable rows={d.corridors.map((cur) => ({ cur, ...DEFAULT_PRICING, ...(d.pricing[cur] || {}) }))} onChange={(rows) => setD({ ...d, pricing: { ...d.pricing, ...Object.fromEntries(rows.map((r) => [r.cur, { margin: r.margin, threshold: r.threshold, fee: r.fee, feePct: r.feePct, aboveFee: r.aboveFee, aboveFeePct: r.aboveFeePct }])) } })} /><PricingHint /></Field>
       <Disclaimer what="Your payout partner" />
       <Field label="Payout partner"><div className="stack-s">
         {avail.map((p) => <div key={p.id} className={`connect-row ${d.partners.includes(p.id) ? 'on' : ''}`}><input type="checkbox" checked={d.partners.includes(p.id)} onChange={() => setD({ ...d, partners: d.partners.includes(p.id) ? [] : [p.id], payoutConnected: false })} aria-label={p.name} /><div className="connect-logo" style={{ background: '#0B3B5C' }}>D</div><div className="grow"><b>{p.name} <Pill tone="good">Built in</Pill></b><small>{p.desc} Covers {p.cur.filter((c) => d.corridors.includes(c)).join(', ')} · {p.methods.join(', ')}.</small></div>{d.partners.includes(p.id) && <Connected ok={d.payoutConnected} name="Daytona" onClick={() => setConnect({ name: 'Daytona Capital Management', color: '#0B3B5C', scope: ['Get live rates and quotes', 'Create payouts', 'Read payout status', 'Read prefund balance'], on: () => setD((x) => ({ ...x, payoutConnected: true })) })} />}</div>)}
@@ -270,7 +271,7 @@ function RemitWizard({ inv, token }) {
       <div className="list" style={{ border: '1px solid var(--line)', borderRadius: 10 }}>
         {[['Business', `${d.legalName} · FRN ${d.frn} · MLR ${d.mlr}`, 0], ['Channels', d.channels.portal ? 'Admin + web portal + app' : d.channels.app ? 'Admin + app' : 'Admin only', 1], ['Design', `${d.font} · ${d.color} / ${d.accent} · ${d.mode}`, 2],
           ['Identity checks', d.kyc === 'custom' ? `${d.kycCustomName} (requested, extra cost)` : `${kycName} · ${d.kycConnected ? 'connected' : 'not connected yet'}`, 3],
-          ['Payouts', `${d.corridors.map((c) => CURRENCIES[c].country).join(', ')} · ${d.partners.length ? `Daytona · ${d.payoutConnected ? 'connected' : 'not connected yet'}` : ''}${d.payoutCustomName ? ` · ${d.payoutCustomName} (requested)` : ''} · fee ${gbp2(+d.fee || 0)} · margin ${d.margin}%`, 4],
+          ['Payouts', `${d.corridors.map((c) => CURRENCIES[c].country).join(', ')} · ${d.partners.length ? `Daytona · ${d.payoutConnected ? 'connected' : 'not connected yet'}` : ''}${d.payoutCustomName ? ` · ${d.payoutCustomName} (requested)` : ''} · ${d.corridors.map((c) => `${c}: ${E.describePricing({ ...DEFAULT_PRICING, ...(d.pricing[c] || {}) })}`).join(' · ')}`, 4],
           ['Payments in', `${d.payin.map((b) => PAYIN_BANKS.find((x) => x.id === b)?.name).join(', ')}${d.payinCustomName ? ` · ${d.payinCustomName} (requested, ${d.payinUrgency})` : ''}`, 5],
           ['Compliance', `${d.releaseMode === 'auto' ? 'Automatic with AI review' : 'Manual release'} · daily £${d.daily} · SoF £${d.sof} · EDD £${d.edd} · MLRO ${d.mlro}`, 6],
           ['Emails', `${d.emails.length} templates`, 7], ['Admin portal', `${d.adminTheme.sidebar} sidebar`, 8]].map(([k, v, i]) => <div className="li" key={k}><div className="grow"><b>{k}</b><small>{v}</small></div><button type="button" className="btn sm" onClick={() => setStep(i)}>Edit</button></div>)}

@@ -14,7 +14,7 @@ export function AppPreview({ t }) {
   const cur = t.corridors.find((c) => c.enabled)?.cur || 'PKR'
   const cor = t.corridors.find((c) => c.enabled)
   const rate = +(CURRENCIES[cur].rate * (1 - (cor?.margin || 0) / 100)).toFixed(4)
-  const q = { rate, fee: cor?.fee || 0, receiveAmount: 500 * rate, cur }
+  const q = { rate, fee: cor ? E.corridorFee(cor, 500).fee : 0, receiveAmount: 500 * rate, cur }
   return (
     <div className={`app ${t.brand.mode === 'dark' ? 'dark' : ''}`} style={brandVars(t)}>
       <div className="app-top"><div className="row"><div className="lg">{t.brand.logo ? <img src={t.brand.logo} alt="" /> : initials(t.brand.appName || t.name)}</div><b>{t.brand.appName || t.name}</b></div><div className="hi">Hi Bilal</div><div className="sub">{t.brand.tagline || 'Send money home in minutes'}</div></div>
@@ -22,7 +22,7 @@ export function AppPreview({ t }) {
         <div className="app-card">
           <span className="app-sec">You send</span><div className="amt"><input value="500" readOnly aria-label="Amount" /><span className="cur">GBP</span></div>
           <span className="app-sec">They receive</span><div className="amt"><span className="recv">{num(q.receiveAmount)}</span><span className="cur">{cur}</span></div>
-          <div className="meta"><span>Rate</span><b>1 GBP = {q.rate} {cur}</b></div><div className="meta"><span>Fee</span><b>{gbp2(q.fee)}</b></div>
+          <div className="meta"><span>Rate</span><b>1 GBP = {q.rate} {cur}</b></div><div className="meta"><span>Fee</span><b>{q.fee ? gbp2(q.fee) : 'No fee'}</b></div>
           <button className="app-btn" type="button">Send money</button>
         </div>
         <span className="app-sec">Recent</span>
@@ -141,7 +141,7 @@ function AppHome({ t, c }) {
         <div className="app-card" style={{ marginTop: kycNeeded ? 0 : undefined }}>
           <span className="app-sec">You send</span><div className="amt"><input id="amt" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount to send" /><span className="cur">GBP</span></div>
           <span className="app-sec">They receive</span><div className="amt"><span className="recv">{q ? num(q.receiveAmount) : '—'}</span><select id="cur" value={cur} onChange={(e) => setCur(e.target.value)} aria-label="Currency">{curs.map((x) => <option key={x.cur}>{x.cur}</option>)}</select></div>
-          {q && <><div className="meta"><span>Rate</span><b>1 GBP = {q.rate} {cur}</b></div><div className="meta"><span>Fee</span><b>{gbp2(q.fee)}</b></div><div className="meta"><span>Total to pay</span><b>{gbp2(q.total)}</b></div><div className="meta"><span>Arrives</span><b>Usually within minutes</b></div></>}
+          {q && <><div className="meta"><span>Rate</span><b>1 GBP = {q.rate} {cur}</b></div><div className="meta"><span>Fee</span><b>{q.fee ? gbp2(q.fee) : 'No fee'}</b></div>{(() => { const cc = t.corridors.find((c) => c.cur === cur); const thr = +(cc?.threshold || 0); const af = cc ? E.corridorFee(cc, thr).fee : 0; return thr > 0 && q.feeBand === 'below' && af === 0 ? <div className="meta" style={{ color: 'var(--good)' }}><span>Send £{thr} or more</span><b style={{ color: 'inherit' }}>No fee</b></div> : null })()}<div className="meta"><span>Total to pay</span><b>{gbp2(q.total)}</b></div><div className="meta"><span>Arrives</span><b>Usually within minutes</b></div></>}
           <button className="app-btn" disabled={!q || c.status === 'frozen'} onClick={() => nav(`/app/${t.slug}/send`, { state: { amt: +amt, cur } })}>Send money</button>
         </div>
         <span className="app-sec">Recent</span>

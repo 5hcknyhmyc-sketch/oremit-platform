@@ -121,8 +121,8 @@ export function buildSeed() {
       frn: '900123', mlr: 'XBML00000123456', email: 'owner@coremit.co.uk', plan: 'Growth', branches: [{ id: 'main', name: 'Barking (head office)', address: '12 Station Parade, Barking IG11 8DN' }, { id: 'ilford', name: 'Ilford', address: '88 High Road, Ilford IG1 1DE' }], rewards: { enabled: true, pointsPerPound: 1, referralBonus: 10, redeemRate: 100 }, createdAt: now() - 60 * DAY, liveAt: now() - 58 * DAY, setupSeconds: 588,
       brand: { color: '#0E5E6F', accent: '#F2A541', appName: 'Northgate' },
       corridors: [
-        { cur: 'PKR', enabled: true, fee: 2.99, margin: 1.2, min: 10, max: 10000 },
-        { cur: 'INR', enabled: true, fee: 2.99, margin: 1.0, min: 10, max: 10000 },
+        { cur: 'PKR', enabled: true, fee: 2.99, feePct: 1, threshold: 100, aboveFee: 0, aboveFeePct: 0, margin: 1.2, min: 10, max: 10000 },
+        { cur: 'INR', enabled: true, fee: 0, feePct: 2.5, threshold: 0, aboveFee: 0, aboveFeePct: 0, margin: 1.0, min: 10, max: 10000 },
         { cur: 'BDT', enabled: true, fee: 1.99, margin: 1.3, min: 10, max: 10000 },
         { cur: 'NGN', enabled: true, fee: 3.49, margin: 1.5, min: 10, max: 8000 },
       ],

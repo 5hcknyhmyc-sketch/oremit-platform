@@ -32,6 +32,9 @@ Rejected transfers are refunded; every step is on the transfer's timeline and in
 1. Business details → 2. channels (web portal + app / app only / admin only) → 3. design (logo, colours, font, text size, roundness, light/dark, navigation — one design drives web portal **and** app) → 4. KYC provider (Didit / Shufti Pro: log in to your own account in a provider window and authorise; or name another provider at extra cost) → 5. countries + payout partner (Daytona Capital Management / Hello Paisa, same connect flow; or request another) → 6. payment processor (Fena open banking built in; other processors are requests: ~1 week standard, urgent and very urgent at extra cost) → 7. compliance release mode (automatic with AI review against uploaded AML/TM policies, or manual release by the compliance officer) → 8. customer email templates → 9. admin portal look → 10. domain, summary, declaration, launch.
 Every provider step carries the disclaimer that the MSB needs its own account and agreement with the provider; TheFXSoft supplies the IT service only. Every tenant surface carries "Made by TheFXSoft Limited".
 
+### Pricing per corridor (`corridorFee` in `src/lib/engine.js`)
+Each corridor has an FX margin and two fee bands split at a threshold: below it a fixed £ plus a % of the amount; at or above it another fixed £ plus % (default £0 + 0%, i.e. larger transfers pay only the FX margin). So "PKR: 2.5%", "BDT: £2 flat", or "under £100: £3 + 1%, £100+: no fee" are all one row. Set at onboarding, edited in Settings → Corridors & pricing.
+
 ### Integrations (chosen at sign-up, changeable in Settings → Integrations)
 - **KYC**: Didit or Shufti Pro included; custom provider quoted separately.
 - **Payout**: Daytona Capital Management included; custom partners quoted separately (Super Admin → Integration requests: quote → MSB accepts → mark live).

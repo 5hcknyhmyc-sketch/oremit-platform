@@ -348,3 +348,5 @@ input[type=range]{width:100%;accent-color:var(--primary)}
 .point svg{width:20px;height:20px;color:var(--primary);flex:none;margin-top:2px}
 .point b{display:block;font-size:13.5px}
 .point small{color:var(--muted);line-height:1.4}
+table.pricing th,table.pricing td{padding:8px 8px}
+table.pricing .inp{padding:6px 8px}
